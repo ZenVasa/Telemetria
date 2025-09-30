@@ -11,7 +11,6 @@
 #define ECHO_PIN  GPIO1    // PA1 - TIM2_CH2 
 
 #define MEASURE_TIMER TIM2
-#define DELAY_TIMER TIM3
 
 // Глобальные переменные для измерения
 volatile uint32_t pulse_start = 0;        // Время начала импульса ECHO
@@ -41,7 +40,7 @@ volatile uint32_t measurement_count = 0;  // Счетчик измерений
     delay_ms(100);
     
     // Основной цикл программы
-    while (1) {
+    while (true) {
         // Выполняем измерение расстояния
         distance_cm = measure_distance();
         measurement_counter++;
@@ -51,20 +50,10 @@ volatile uint32_t measurement_count = 0;  // Счетчик измерений
         
         // Обработка результатов измерения
         if (distance_cm > 0) {
-            // Успешное измерение - здесь можно добавить логику
             
-            // Пример: разные действия в зависимости от расстояния
-            if (distance_cm < 10.0f) {
-                // Объект очень близко (менее 10 см)
-                // Можно активировать сигнал тревоги
-            } else if (distance_cm < 50.0f) {
-                // Объект на среднем расстоянии (10-50 см)
-            } else if (distance_cm < 100.0f) {
-                // Объект далеко (50-100 см)
-            } else {
-                // Объект очень далеко (>100 см)
-            }
-            
+
+
+
             // Здесь можно добавить отправку данных по UART,
             // сохранение в память, управление моторами и т.д.
             
@@ -79,28 +68,6 @@ volatile uint32_t measurement_count = 0;  // Счетчик измерений
     
     return 0;
 }
-
-
-/**
-    Точная задержка в микросекундах
-    количество микросекунд для задержки
- */
-void delay_us(uint32_t us) {
-    // Используем простой цикл для задержки
-    // При 84 МГц: 84 цикла ≈ 1 мкс
-    for (volatile uint32_t i = 0; i < us * 84; i++);
-}
-
-/**
-    Точная задержка в миллисекундах
-    количество миллисекунд для задержки
- */
-void delay_ms(uint32_t ms) {
-    for (volatile uint32_t i = 0; i < ms; i++) {
-        delay_us(1000);
-    }
-}
-
 
     // Инициализация GPIO
     // PA0 (TRIG) - выход для запуска измерения
@@ -123,28 +90,19 @@ void gpio_setup(void) {
 }
 
     // Инициализация таймера TIM2 для Capture измерений
- 
     // Таймер настроен на частоту 1 МГц (1 тик = 1 микросекунда)
     // Канал 2 настроен на захват по обоим фронтам сигнала ECHO
 
 void timer_setup(void) {
-    // Включаем тактирование TIM2
-    rcc_periph_clock_enable(RCC_TIM2);
     
-    // Останавливаем таймер перед настройкой
-    timer_disable_counter(MEASURE_TIMER);
+    rcc_periph_clock_enable(RCC_TIM2);      // Включаем тактирование TIM2
+    timer_disable_counter(MEASURE_TIMER);   // Останавливаем таймер перед настройкой
+    timer_reset(MEASURE_TIMER); // Сбрасываем настройки таймера
     
-    // Сбрасываем настройки таймера
-    timer_reset(MEASURE_TIMER);
+    timer_set_prescaler(MEASURE_TIMER, 84 - 1); // Настройка предделителя: 84 МГц / 84 = 1 МГц (1 мкс на тик)
+    timer_set_period(MEASURE_TIMER, 0xFFFFFFFF); // Устанавливаем максимальный период (32 бита)
     
-    // Настройка предделителя: 84 МГц / 84 = 1 МГц (1 мкс на тик)
-    timer_set_prescaler(MEASURE_TIMER, 84 - 1);
-    
-    // Устанавливаем максимальный период (32 бита)
-    timer_set_period(MEASURE_TIMER, 0xFFFFFFFF);
-    
-    // Режим работы: непрерывный счет
-    timer_continuous_mode(MEASURE_TIMER);
+    timer_continuous_mode(MEASURE_TIMER);   // Режим работы: непрерывный счет
     
     // Настройка канала 2 (PA1) для Input Capture
     timer_ic_set_input(MEASURE_TIMER, TIM_IC2, TIM_IC_IN_TI1);
@@ -154,18 +112,13 @@ void timer_setup(void) {
     // Захват по обоим фронтам (передний и задний)
     timer_ic_set_polarity(MEASURE_TIMER, TIM_IC2, TIM_IC_BOTH_EDGES);
     
-    // Включаем канал capture/compare
-    timer_cc_enable(MEASURE_TIMER, TIM_CC2);
+    timer_cc_enable(MEASURE_TIMER, TIM_CC2);  // Включаем канал capture/compare
+    timer_enable_irq(MEASURE_TIMER, TIM_DIER_CC2IE);   // Включаем прерывание по захвату канала 2
     
-    // Включаем прерывание по захвату канала 2
-    timer_enable_irq(MEASURE_TIMER, TIM_DIER_CC2IE);
-    
-    // Разрешаем прерывание TIM2 в NVIC (приоритет 0)
-    nvic_enable_irq(NVIC_TIM2_IRQ);
+    nvic_enable_irq(NVIC_TIM2_IRQ);         // Разрешаем прерывание TIM2 в NVIC (приоритет 0)
     nvic_set_priority(NVIC_TIM2_IRQ, 0);
     
-    // Запускаем таймер
-    timer_enable_counter(MEASURE_TIMER);
+    timer_enable_counter(MEASURE_TIMER);    // Запускаем таймер
 }
 
 /*
@@ -206,28 +159,9 @@ void tim2_isr(void) {
     }
 }
 
-/*
-    Отправка запускающего импульса на HC-SR04
-  
-    Генерирует импульс длительностью 10 микросекунд на пине TRIG
-    согласно спецификации HC-SR04
- */
-void send_trigger_pulse(void) {
-    // Гарантируем начальный низкий уровень (минимум 2 мкс)
-    gpio_clear(TRIG_PORT, TRIG_PIN);
-    delay_us(5);
-    
-    // Устанавливаем высокий уровень на 10-15 мкс
-    gpio_set(TRIG_PORT, TRIG_PIN);
-    delay_us(12); // 12 мкс для надежности
-    
-    // Возвращаем низкий уровень
-    gpio_clear(TRIG_PORT, TRIG_PIN);
-}
+
 
  // Вычисление расстояния в сантиметрах
- 
- // float Расстояние в сантиметрах
  /*
     Формула: расстояние = (время_полета * скорость_звука) / 2
     Скорость звука: 340 м/с = 0.034 см/мкс
@@ -238,9 +172,7 @@ float get_distance_cm(void) {
     return (pulse_width * 0.034) / 2.0;
 }
 
-
-    // Вычисление расстояния в миллиметрах (более точное)
-    // uint32_t Расстояние в миллиметрах
+// Вычисление расстояния в миллиметрах 
 
 uint32_t get_distance_mm(void) {
     // Более точный расчет в мм
@@ -250,10 +182,7 @@ uint32_t get_distance_mm(void) {
 
 // Проверка валидности измерения
  
-    // Расстояние в см для проверки
-    // true Измерение валидно
-    // false Измерение невалидно
- 
+    // Расстояние в см для проверки (true false) 
 bool is_valid_distance(float distance_cm) {
     // HC-SR04 рабочий диапазон: 2-400 см
     // Отсекаем значения вне диапазона
@@ -298,8 +227,24 @@ float measure_distance(void) {
     return -1.0f;
 }
 
+/*  Отправка запускающего импульса на HC-SR04
+    Генерирует импульс длительностью 10 микросекунд на пине TRIG
+ */
+void send_trigger_pulse(void) {
+    // Гарантируем начальный низкий уровень (минимум 2 мкс)
+    gpio_clear(TRIG_PORT, TRIG_PIN);
+    delay_us(5);
+    
+    // Устанавливаем высокий уровень на 10-15 мкс
+    gpio_set(TRIG_PORT, TRIG_PIN);
+    delay_us(12); // 12 мкс
+    
+    // Возвращаем низкий уровень
+    gpio_clear(TRIG_PORT, TRIG_PIN);
+}
 
-// Инициализация светодиода для индикации (опционально)
+
+// Инициализация светодиода для индикации
 
 void led_setup(void) {
     // Включаем тактирование порта D
@@ -314,8 +259,7 @@ void led_setup(void) {
 }
 
 
-  //Индикация состояния измерения светодиодом
-
+// Индикация состояния измерения светодиодом
 void indicate_measurement(float distance) {
     // Мигаем светодиодом в зависимости от результата
     if (distance > 0) {
@@ -331,6 +275,23 @@ void indicate_measurement(float distance) {
     }
 }
 
+/*  Точная задержка в микросекундах
+    количество микросекунд для задержки
+*/
+void delay_us(uint32_t us) {
+    // Используем простой цикл для задержки
+    // При 84 МГц: 84 цикла ≈ 1 мкс
+    for (volatile uint32_t i = 0; i < us * 84; i++);
+}
+
+/*  Точная задержка в миллисекундах
+    количество миллисекунд для задержки
+*/
+void delay_ms(uint32_t ms) {
+    for (volatile uint32_t i = 0; i < ms; i++) {
+        delay_us(1000);
+    }
+}
 
 
 
