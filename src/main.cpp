@@ -26,6 +26,20 @@ volatile bool measurement_ready = false;  // Флаг готовности из�
 volatile bool measurement_timeout = false;// Флаг таймаута измерения
 volatile uint32_t measurement_count = 0;  // Счетчик измерений
 
+// Прототипы функций
+void uart_setup(void);
+void uart_send_string(const char *str);
+void send_distance_cm(float distance_cm);
+void delay_us(uint32_t us);
+void delay_ms(uint32_t ms);
+void gpio_setup(void);
+void timer_setup(void);
+void tim2_isr(void);
+void send_trigger_pulse(void);
+float get_distance_cm(void);
+bool is_valid_distance(float distance_cm);
+float measure_distance(void);
+
 
 // Буфер для форматирования строки UART
 char uart_buffer[64];
