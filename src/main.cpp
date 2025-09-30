@@ -10,6 +10,12 @@
 #define ECHO_PORT GPIOA  
 #define ECHO_PIN  GPIO1    // PA1 - TIM2_CH2 
 
+// UART3 пины (PD8 - TX, PD9 - RX)
+#define UART_PORT GPIOD
+#define UART_TX_PIN GPIO8
+#define UART_RX_PIN GPIO9
+#define UART_DEVICE USART3
+
 #define MEASURE_TIMER TIM2
 
 // Глобальные переменные для измерения
@@ -19,6 +25,57 @@ volatile uint32_t pulse_width = 0;        // Длительность импул
 volatile bool measurement_ready = false;  // Флаг готовности измерения
 volatile bool measurement_timeout = false;// Флаг таймаута измерения
 volatile uint32_t measurement_count = 0;  // Счетчик измерений
+
+
+// Буфер для форматирования строки UART
+char uart_buffer[64];
+
+void uart_setup(void) {
+    // Включаем тактирование порта D и USART3
+    rcc_periph_clock_enable(RCC_GPIOD);
+    rcc_periph_clock_enable(RCC_USART3);
+    
+    // Настраиваем PD8 как альтернативную функцию (USART3_TX)
+    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_TX_PIN);
+    gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN);
+    
+    // Настраиваем PD9 как альтернативную функцию (USART3_RX)
+    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_RX_PIN);
+    gpio_set_af(UART_PORT, GPIO_AF7, UART_RX_PIN);
+    
+    // Настраиваем USART3
+    usart_set_baudrate(UART_DEVICE, 115200);
+    usart_set_databits(UART_DEVICE, 8);
+    usart_set_stopbits(UART_DEVICE, USART_STOPBITS_1);
+    usart_set_parity(UART_DEVICE, USART_PARITY_NONE);
+    usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
+    usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
+    
+    // Включаем USART3
+    usart_enable(UART_DEVICE);
+}
+
+
+// Отправка строки по UART
+
+void uart_send_string(const char *str) {
+    while (*str) {
+        usart_send_blocking(UART_DEVICE, *str);
+        str++;
+    }
+}
+
+// Отправка расстояния по UART
+ 
+void send_distance_cm(float distance_cm) {
+    if (distance_cm > 0) {
+        snprintf(uart_buffer, sizeof(uart_buffer), "%.2f cm\r\n", distance_cm);
+    } else {
+        snprintf(uart_buffer, sizeof(uart_buffer), "Error\r\n");
+    }
+    
+    uart_send_string(uart_buffer);
+}
 
 
  //Основная функция программы
@@ -48,20 +105,10 @@ volatile uint32_t measurement_count = 0;  // Счетчик измерений
         // Индикация результата (опционально)
         indicate_measurement(distance_cm);
         
-        // Обработка результатов измерения
-        if (distance_cm > 0) {
-            
+         // Отправляем расстояние по UART
+        send_distance_cm(distance_cm);
 
 
-
-            // Здесь можно добавить отправку данных по UART,
-            // сохранение в память, управление моторами и т.д.
-            
-        } else {
-            // Ошибка измерения или объект вне диапазона
-            // Можно добавить обработку ошибок
-        }
-        
         // Задержка между измерениями (рекомендуется >60 мс)
         delay_ms(60);
     }
