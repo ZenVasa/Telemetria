@@ -30,61 +30,14 @@ volatile uint32_t measurement_count = 0;  // Счетчик измерений
 // Буфер для форматирования строки UART
 char uart_buffer[64];
 
-void uart_setup(void) {
-    // Включаем тактирование порта D и USART3
-    rcc_periph_clock_enable(RCC_GPIOD);
-    rcc_periph_clock_enable(RCC_USART3);
-    
-    // Настраиваем PD8 как альтернативную функцию (USART3_TX)
-    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_TX_PIN);
-    gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN);
-    
-    // Настраиваем PD9 как альтернативную функцию (USART3_RX)
-    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_RX_PIN);
-    gpio_set_af(UART_PORT, GPIO_AF7, UART_RX_PIN);
-    
-    // Настраиваем USART3
-    usart_set_baudrate(UART_DEVICE, 115200);
-    usart_set_databits(UART_DEVICE, 8);
-    usart_set_stopbits(UART_DEVICE, USART_STOPBITS_1);
-    usart_set_parity(UART_DEVICE, USART_PARITY_NONE);
-    usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
-    usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
-    
-    // Включаем USART3
-    usart_enable(UART_DEVICE);
-}
-
-
-// Отправка строки по UART
-
-void uart_send_string(const char *str) {
-    while (*str) {
-        usart_send_blocking(UART_DEVICE, *str);
-        str++;
-    }
-}
-
-// Отправка расстояния по UART
- 
-void send_distance_cm(float distance_cm) {
-    if (distance_cm > 0) {
-        snprintf(uart_buffer, sizeof(uart_buffer), "%.2f cm\r\n", distance_cm);
-    } else {
-        snprintf(uart_buffer, sizeof(uart_buffer), "Error\r\n");
-    }
-    
-    uart_send_string(uart_buffer);
-}
-
-
- //Основная функция программы
+// Основная функция программы
 
  int main(void) {
     // Настройка системных часов на 84 МГц от HSE 8 МГц
     rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
     
     // Инициализация периферии
+    uart_setup();
     gpio_setup();
     timer_setup();
     led_setup(); 
@@ -116,10 +69,53 @@ void send_distance_cm(float distance_cm) {
     return 0;
 }
 
+void uart_setup(void) {
+    // Включаем тактирование порта D и USART3
+    rcc_periph_clock_enable(RCC_GPIOD);
+    rcc_periph_clock_enable(RCC_USART3);
+    
+    // Настраиваем PD8 как альтернативную функцию (USART3_TX)
+    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_TX_PIN);
+    gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN);
+    
+    // Настраиваем PD9 как альтернативную функцию (USART3_RX)
+    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_RX_PIN);
+    gpio_set_af(UART_PORT, GPIO_AF7, UART_RX_PIN);
+    
+    // Настраиваем USART3
+    usart_set_baudrate(UART_DEVICE, 115200);
+    usart_set_databits(UART_DEVICE, 8);
+    usart_set_stopbits(UART_DEVICE, USART_STOPBITS_1);
+    usart_set_parity(UART_DEVICE, USART_PARITY_NONE);
+    usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
+    usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
+    
+    // Включаем USART3
+    usart_enable(UART_DEVICE);
+}
+
+// Отправка строки по UART
+void uart_send_string(const char *str) {
+    while (*str) {
+        usart_send_blocking(UART_DEVICE, *str);
+        str++;
+    }
+}
+
+// Отправка расстояния по UART
+void send_distance_cm(float distance_cm) {
+    if (distance_cm > 0) {
+        snprintf(uart_buffer, sizeof(uart_buffer), "%.2f cm\r\n", distance_cm);
+    } else {
+        snprintf(uart_buffer, sizeof(uart_buffer), "Error\r\n");
+    }
+    
+    uart_send_string(uart_buffer);
+}
+
     // Инициализация GPIO
     // PA0 (TRIG) - выход для запуска измерения
     // PA1 (ECHO) - вход с альтернативной функцией для захвата таймером
-
 void gpio_setup(void) {
     // Включаем тактирование порта A
     rcc_periph_clock_enable(RCC_GPIOA);
@@ -168,12 +164,12 @@ void timer_setup(void) {
     timer_enable_counter(MEASURE_TIMER);    // Запускаем таймер
 }
 
-/*
-    Обработчик прерывания TIM2 - Capture прерывание
+
+ //   Обработчик прерывания TIM2 - Capture прерывание
   
-    Вызывается при срабатывании захвата по каналу 2 (ECHO сигнал)
-    Определяет фронты импульса и вычисляет его длительность
- */
+ //   Вызывается при срабатывании захвата по каналу 2 (ECHO сигнал)
+ //   Определяет фронты импульса и вычисляет его длительность
+/
 void tim2_isr(void) {
     // Проверяем флаг прерывания Capture/Compare канала 2
     if (timer_get_flag(MEASURE_TIMER, TIM_SR_CC2IF)) {
@@ -209,11 +205,11 @@ void tim2_isr(void) {
 
 
  // Вычисление расстояния в сантиметрах
- /*
-    Формула: расстояние = (время_полета * скорость_звука) / 2
-    Скорость звука: 340 м/с = 0.034 см/мкс
-    Делим на 2 потому что звук проходит путь до объекта и обратно
- */
+
+//   Формула: расстояние = (время_полета * скорость_звука) / 2
+//  Скорость звука: 340 м/с = 0.034 см/мкс
+//  Делим на 2 потому что звук проходит путь до объекта и обратно
+/
 float get_distance_cm(void) {
     // pulse_width в микросекундах (т.к. таймер на 1 МГц)
     return (pulse_width * 0.034) / 2.0;
@@ -274,9 +270,9 @@ float measure_distance(void) {
     return -1.0f;
 }
 
-/*  Отправка запускающего импульса на HC-SR04
-    Генерирует импульс длительностью 10 микросекунд на пине TRIG
- */
+// Отправка запускающего импульса на HC-SR04
+  //  Генерирует импульс длительностью 10 микросекунд на пине TRIG
+
 void send_trigger_pulse(void) {
     // Гарантируем начальный низкий уровень (минимум 2 мкс)
     gpio_clear(TRIG_PORT, TRIG_PIN);
@@ -298,42 +294,48 @@ void led_setup(void) {
     rcc_periph_clock_enable(RCC_GPIOD);
     
     // Настраиваем PD15
-    gpio_mode_setup(GPIOD,GPIO_MODE_OUTPUT,GPIO_PUPD_NONE,GPIO15);
-    gpio_set_output_options(GPIOD, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, GPIO15);
+    gpio_mode_setup(GPIOD,GPIO_MODE_OUTPUT,GPIO_PUPD_NONE,GPIO13);
+    gpio_set_output_options(GPIOD, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, GPIO13);
     
     // Изначально выключаем светодиод
-    gpio_clear(GPIOD, GPIO15);
+    gpio_clear(GPIOD, GPIO13);
 }
 
 
 // Индикация состояния измерения светодиодом
 void indicate_measurement(float distance) {
     // Мигаем светодиодом в зависимости от результата
-    if (distance > 0) {
+    if (distance > 5) {
         // Успешное измерение - короткое мигание
-        gpio_set(GPIOD, GPIO15);
+        gpio_set(GPIOD, GPIO13);
         delay_ms(50);
-        gpio_clear(GPIOD, GPIO15);
-    } else {
+        gpio_clear(GPIOD, GPIO13);
+    } else if(distance < 5) {
         // Ошибка измерения - длинное мигание
-        gpio_set(GPIOD, GPIO15);
+        gpio_set(GPIOD, GPIO13);
+        delay_ms(25);
+        gpio_clear(GPIOD, GPIO13);
+    else if (distance < 2) {
+        // Ошибка измерения - длинное мигание
+        gpio_set(GPIOD, GPIO13);
         delay_ms(200);
-        gpio_clear(GPIOD, GPIO15);
+        gpio_clear(GPIOD, GPIO13);
     }
 }
+}
 
-/*  Точная задержка в микросекундах
-    количество микросекунд для задержки
-*/
+// Точная задержка в микросекундах
+//    количество микросекунд для задержки
+
 void delay_us(uint32_t us) {
     // Используем простой цикл для задержки
     // При 84 МГц: 84 цикла ≈ 1 мкс
     for (volatile uint32_t i = 0; i < us * 84; i++);
 }
 
-/*  Точная задержка в миллисекундах
-    количество миллисекунд для задержки
-*/
+//  Точная задержка в миллисекундах
+ //   количество миллисекунд для задержки
+
 void delay_ms(uint32_t ms) {
     for (volatile uint32_t i = 0; i < ms; i++) {
         delay_us(1000);
@@ -343,7 +345,6 @@ void delay_ms(uint32_t ms) {
 
 
 /*
-
 int main()
 {
 
