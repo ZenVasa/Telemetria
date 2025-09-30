@@ -2,6 +2,7 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
+#include <libopencm3/stm32/usart.h>
 
 
 // Определения пинов и периферии
@@ -28,21 +29,22 @@ volatile uint32_t measurement_count = 0;  // Счетчик измерений
 
 // Прототипы функций
 void uart_setup(void);
+void gpio_setup(void);
+void timer_setup(void);
+void tim2_isr(void);
+void led_setup(void);
 void uart_send_string(const char *str);
 void send_distance_cm(float distance_cm);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
-void gpio_setup(void);
-void timer_setup(void);
-void tim2_isr(void);
 void send_trigger_pulse(void);
 float get_distance_cm(void);
 bool is_valid_distance(float distance_cm);
 float measure_distance(void);
 
+void indicate_measurement(float distance)
 
-// Буфер для форматирования строки UART
-char uart_buffer[64];
+
 
 // Основная функция программы
 
@@ -96,6 +98,8 @@ void uart_setup(void) {
     gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_RX_PIN);
     gpio_set_af(UART_PORT, GPIO_AF7, UART_RX_PIN);
     
+    USART_BRR(USART3) = 42000000 / 115200;
+    /*
     // Настраиваем USART3
     usart_set_baudrate(UART_DEVICE, 115200);
     usart_set_databits(UART_DEVICE, 8);
@@ -103,7 +107,8 @@ void uart_setup(void) {
     usart_set_parity(UART_DEVICE, USART_PARITY_NONE);
     usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
     usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
-    
+    */
+
     // Включаем USART3
     usart_enable(UART_DEVICE);
 }
@@ -115,7 +120,8 @@ void uart_send_string(const char *str) {
         str++;
     }
 }
-
+// Буфер для форматирования строки UART
+char uart_buffer[64];
 // Отправка расстояния по UART
 void send_distance_cm(float distance_cm) {
     if (distance_cm > 0) {
@@ -183,7 +189,7 @@ void timer_setup(void) {
   
  //   Вызывается при срабатывании захвата по каналу 2 (ECHO сигнал)
  //   Определяет фронты импульса и вычисляет его длительность
-/
+
 void tim2_isr(void) {
     // Проверяем флаг прерывания Capture/Compare канала 2
     if (timer_get_flag(MEASURE_TIMER, TIM_SR_CC2IF)) {
@@ -223,7 +229,7 @@ void tim2_isr(void) {
 //   Формула: расстояние = (время_полета * скорость_звука) / 2
 //  Скорость звука: 340 м/с = 0.034 см/мкс
 //  Делим на 2 потому что звук проходит путь до объекта и обратно
-/
+
 float get_distance_cm(void) {
     // pulse_width в микросекундах (т.к. таймер на 1 МГц)
     return (pulse_width * 0.034) / 2.0;
@@ -320,23 +326,22 @@ void led_setup(void) {
 void indicate_measurement(float distance) {
     // Мигаем светодиодом в зависимости от результата
     if (distance > 5) {
-        // Успешное измерение - короткое мигание
+
         gpio_set(GPIOD, GPIO13);
         delay_ms(50);
         gpio_clear(GPIOD, GPIO13);
-    } else if(distance < 5) {
-        // Ошибка измерения - длинное мигание
+    } 
+    else if(distance < 5) {
+        
         gpio_set(GPIOD, GPIO13);
         delay_ms(25);
         gpio_clear(GPIOD, GPIO13);
-    else if (distance < 2) {
-        // Ошибка измерения - длинное мигание
-        gpio_set(GPIOD, GPIO13);
-        delay_ms(200);
-        gpio_clear(GPIOD, GPIO13);
+    }
+    else{
+
     }
 }
-}
+
 
 // Точная задержка в микросекундах
 //    количество микросекунд для задержки
