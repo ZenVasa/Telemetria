@@ -57,8 +57,7 @@ void uart_send_string(const char *str);
 void send_distance_cm(float distance_cm);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
-float get_distance_cm(const MeasurementState& state);
-bool is_valid_distance(float distance_cm);
+float get_distance_cm(void);
 float measure_distance(void);
 void indicate_measurement(float distance);
 void my_usart_print_int(uint32_t usart, int16_t value);
@@ -121,6 +120,7 @@ void uart_setup(void) {
     // Включаем USART3
     usart_enable(UART_DEVICE);
 }
+//---------------------------------------------------------------------------------
 
 // Отправка строки по UART
 void uart_send_string(const char *str) {
@@ -170,6 +170,7 @@ void send_distance_cm(float distance_cm) {
     }
 }
 
+//---------------------------------------------------------------------------------
 // Инициализация GPIO
 void gpio_setup(void) {
     // Включаем тактирование порта A
@@ -237,8 +238,8 @@ void tim2_isr(void) {
             if (g_measurement.pulse_end >= g_measurement.pulse_start) 
             {
                 g_measurement.pulse_width = g_measurement.pulse_end - g_measurement.pulse_start;
-            } else 
-            {
+            }
+            else {
                 g_measurement.pulse_width = (0xFFFFFFFF - g_measurement.pulse_start) + 
                                           g_measurement.pulse_end + 1;
             }
@@ -252,7 +253,7 @@ void tim2_isr(void) {
 // Функция измерения расстояния с таймаутом
 float measure_distance(void) {
 
-    constexpr uint32_t MEASUREMENT_TIMEOUT_MS = 100; // таймаут 100 мс
+    constexpr uint32_t MEASUREMENT_TIMEOUT_MS = 100; // Таймаут 100 мс
     
     // Сбрасываем состояние измерения
     g_measurement.reset();
@@ -273,68 +274,64 @@ float measure_distance(void) {
     gpio_clear(TRIG_PORT, TRIG_PIN);
 
     // Ожидаем результат измерения
-    constexpr uint32_t timeout_loops = MEASUREMENT_TIMEOUT_MS * 100;
+    constexpr uint32_t TIMEOUT_LOOPS = MEASUREMENT_TIMEOUT_MS * 100;
 
-    for (uint32_t timeout = 0; timeout < timeout_loops; timeout++) // Цикл ожидания
+    for (uint32_t timeout = 0; timeout < TIMEOUT_LOOPS; timeout++) // Цикл ожидания
     {
         if (g_measurement.measurement_ready) // Ожидаем true в прерывании таймера
         {
             const float distance = get_distance_cm(g_measurement);
-
-            return is_valid_distance(distance) ? distance : -1.0f;
+            
+            // Проверяем диапазон 2-400 см
+            // Если расстояние валидно, возвращаем его, иначе -1.0f (ошибка)
+            return (distance >= 2.0f && distance <= 400.0f) ? distance : -1.0f; 
         }
-        delay_us(10);
+        delay_us(10); // Пауза между проверками флага
     }
     
-    // Таймаут
+    // Таймаут срабатывает если за 100 мс не получен ECHO-импульс
     return -1.0f;
 }
 
-
-
 // Вычисление расстояния в сантиметрах
-float get_distance_cm(const MeasurementState& state) 
+float get_distance_cm(void) 
 {
     constexpr float SOUND_SPEED_CM_PER_US = 0.034f; // Скорость звука в см/мкс
-    return (state.pulse_width * SOUND_SPEED_CM_PER_US) / 2.0f; // Расстояние до объекта в см/мск
-}
-
-// Проверка валидности измерения
-bool is_valid_distance(float distance_cm) 
-{
-    constexpr float MIN_DISTANCE_CM = 2.0f;     // Минимальное значение
-    constexpr float MAX_DISTANCE_CM = 400.0f;   // Максимальное значение
-    return (distance_cm >= MIN_DISTANCE_CM && distance_cm <= MAX_DISTANCE_CM);
+    return (g_measurement.pulse_width * SOUND_SPEED_CM_PER_US) / 2.0f; // Расстояние до объекта в см/мск
 }
 
 // Инициализация светодиода
 void led_setup(void) {
-    rcc_periph_clock_enable(RCC_GPIOD);
-    gpio_mode_setup(LED_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, LED_PIN);
+    // Включаем тактирование порта D
+    rcc_periph_clock_enable(RCC_GPIOD); 
+    // Настраиваем пин как выход        
+    gpio_mode_setup(LED_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, LED_PIN); 
+    // Скорость переключения
     gpio_set_output_options(LED_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, LED_PIN);
-    gpio_clear(LED_PORT, LED_PIN);
+    // Гарантируем выключенное состояние 
+    gpio_clear(LED_PORT, LED_PIN); 
 }
 
 // Индикация состояния измерения светодиодом
 void indicate_measurement(float distance) {
-    if (distance > 0 && distance < 5) {
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(25);
-        gpio_clear(LED_PORT, LED_PIN);
-    } 
-    else if (distance >= 5) {
+    if (distance < 2 && distance > 400) {   // При ошибочных измерениях
         gpio_set(LED_PORT, LED_PIN);
         delay_ms(50);
+        gpio_clear(LED_PORT, LED_PIN);
+    } 
+    else if (distance > 2 && distance < 400) { // При правильных измерениях
+        gpio_set(LED_PORT, LED_PIN);
+        delay_ms(25);
         gpio_clear(LED_PORT, LED_PIN);
     }
 }
 
-// Точная задержка в микросекундах
+// Задержка в микросекундах
 void delay_us(uint32_t us) {
-    for (volatile uint32_t i = 0; i < us * 84; i++);
+    for (volatile uint32_t i = 0; i < us * 84; i++); // Тактовая частота 84 МГц
 }
 
-// Точная задержка в миллисекундах
+// Задержка в миллисекундах
 void delay_ms(uint32_t ms) {
     for (uint32_t i = 0; i < ms; i++) {
         delay_us(1000);
