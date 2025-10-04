@@ -25,9 +25,6 @@ constexpr uint32_t MEASURE_TIMER = TIM2;
 constexpr uint32_t LED_PORT = GPIOD;
 constexpr uint16_t LED_PIN = GPIO15;
 
-// Глобальные переменные
-static volatile MeasurementState g_measurement;
-
 // Структура для хранения состояния измерения
 struct MeasurementState 
 {
@@ -36,15 +33,11 @@ struct MeasurementState
     uint32_t pulse_width{0};        // Длительность импульса (тики)
     bool measurement_ready{false};  // Флаг готовности измерения
     uint32_t measurement_count{0};  // Флаг таймаута измерения
-    
-    void reset() 
-    {
-        pulse_start = 0;
-        pulse_end = 0;
-        pulse_width = 0;
-        measurement_ready = false;
-    }
 };
+
+// Глобальные переменные
+static volatile MeasurementState g_measurement;
+
 
 
 // Прототипы функций
@@ -55,7 +48,7 @@ void tim2_isr(void);
 void led_setup(void);
 void uart_send_string(const char *str);
 void send_distance_cm(float distance_cm);
-void uart_send_message(const char *text, float float_value);
+void uart_send_message(float float_value, const char *text);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 float get_distance_cm(void);
@@ -91,7 +84,7 @@ int main(void) {
         indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
-        uart_send_message(См:, distance_cm);
+        uart_send_message(distance_cm," См ");
 
         // Задержка между измерениями
         delay_ms(60);
@@ -124,12 +117,12 @@ void uart_setup(void) {
 //---------------------------------------------------------------------------------
 
 // Функция для отправки форматированного сообщения с текстом и значением
-static void uart_send_message(const char *text, float float_value)
+void uart_send_message(float float_value, const char *text)
 {
     char buffer[80];
     
     // Форматируем строку с текстом и числами
-    snprintf(buffer, sizeof(buffer), "%s %.3f\r\n", text, float_value);
+    snprintf(buffer, sizeof(buffer),"%s %.3f\r\n", float_value, text);
     
     // Отправляем сформированное сообщение
     for (const char *p = buffer; *p; p++) 
@@ -154,7 +147,7 @@ void send_distance_cm(float distance_cm) {
     char uart_buffer[64];
     
     if (distance_cm < 0) {
-        snprintf(uart_buffer, sizeof(uart_buffer), "Error: Measurement timeout or invalid distance\r\n");
+        snprintf(uart_buffer, sizeof(uart_buffer), "Ошибка: тайм-аут измерения или расстояние\r\n");
         uart_send_string(uart_buffer);
     } else {
         my_usart_print_int(UART_DEVICE, static_cast<int16_t>(distance_cm));
@@ -247,7 +240,10 @@ float measure_distance(void) {
     constexpr uint32_t MEASUREMENT_TIMEOUT_MS = 100; // Таймаут 100 мс
     
     // Сбрасываем состояние измерения
-    g_measurement.reset();
+    g_measurement.pulse_start = 0;
+    g_measurement.pulse_end = 0;
+    g_measurement.pulse_width = 0;
+    g_measurement.measurement_ready = false;
     
     // Отправка запускающего импульса на HC-SR04
     constexpr uint32_t TRIG_LOW_DELAY_US = 4;   // Ожидание перед импульсом
@@ -271,11 +267,9 @@ float measure_distance(void) {
     {
         if (g_measurement.measurement_ready) // Ожидаем true в прерывании таймера
         {
-            const float distance = get_distance_cm(g_measurement);
+            const float distance = get_distance_cm();
             
-            // Проверяем диапазон 2-400 см
-            // Если расстояние валидно, возвращаем его, иначе -1.0f (ошибка)
-            // Проверяем диапазон 2-400 см
+        // Проверяем диапазон 2-400 см
         if (distance >= 2.0f && distance <= 400.0f)
         {
             return distance; // Возвращаем валидное расстояние
@@ -285,21 +279,23 @@ float measure_distance(void) {
             // Вывод сообщения об ошибке в UART
             if (distance < 2.0f)
             {
-                uart_send_string("ERROR: Distance too small (< 2 cm)\r\n");
+                uart_send_string("ОШИБКА: Cлишком маленькое расстояние (< 2 см) (< 2 cm)\r\n");
             }
             else if (distance > 400.0f)
             {
-                uart_send_string("ERROR: Distance too large (> 400 cm)\r\n");
+                uart_send_string("ОШИБКА: Cлишком большое расстояние (> 400 см)\r\n");
             }
             else
             {
-                uart_send_string("ERROR: Invalid distance measurement\r\n");
+                uart_send_string("ОШИБКА: Неверное измерение расстояния\r\n");
             }
             return -1.0f; // Ошибка
+        }
     }
     
     // Таймаут срабатывает если за 100 мс не получен ECHO-импульс
     return -1.0f;
+    }
 }
 
 // Вычисление расстояния в сантиметрах
