@@ -91,7 +91,7 @@ int main(void) {
         indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
-        send_distance_cm(distance_cm);
+        uart_send_message(См:, distance_cm);
 
         // Задержка между измерениями
         delay_ms(60);
@@ -130,9 +130,12 @@ static void uart_send_message(const char *text, float float_value)
     
     // Форматируем строку с текстом и числами
     snprintf(buffer, sizeof(buffer), "%s %.3f\r\n", text, float_value);
+    
     // Отправляем сформированное сообщение
-    for (const char *p = buffer; *p; p++) {
-    usart_send_blocking(UART_DEVICE, *p);
+    for (const char *p = buffer; *p; p++) 
+    {
+        usart_send_blocking(UART_DEVICE, *p);
+    }
 }
 
 // Отправка строки по UART
@@ -144,7 +147,7 @@ void uart_send_string(const char *str) {
 }
 
 // Прямой вызов с текстом и числом
-//uart_send_message("Текст:", distance);
+// uart_send_message("Текст:", distance);
 
 // Отправка расстояния по UART
 void send_distance_cm(float distance_cm) {
