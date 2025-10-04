@@ -275,9 +275,27 @@ float measure_distance(void) {
             
             // Проверяем диапазон 2-400 см
             // Если расстояние валидно, возвращаем его, иначе -1.0f (ошибка)
-            return (distance >= 2.0f && distance <= 400.0f) ? distance : -1.0f; 
+            // Проверяем диапазон 2-400 см
+        if (distance >= 2.0f && distance <= 400.0f)
+        {
+            return distance; // Возвращаем валидное расстояние
         }
-        delay_us(10); // Пауза между проверками флага
+        else
+        {
+            // Вывод сообщения об ошибке в UART
+            if (distance < 2.0f)
+            {
+                uart_send_string("ERROR: Distance too small (< 2 cm)\r\n");
+            }
+            else if (distance > 400.0f)
+            {
+                uart_send_string("ERROR: Distance too large (> 400 cm)\r\n");
+            }
+            else
+            {
+                uart_send_string("ERROR: Invalid distance measurement\r\n");
+            }
+            return -1.0f; // Ошибка
     }
     
     // Таймаут срабатывает если за 100 мс не получен ECHO-импульс
