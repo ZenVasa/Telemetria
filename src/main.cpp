@@ -55,6 +55,7 @@ void tim2_isr(void);
 void led_setup(void);
 void uart_send_string(const char *str);
 void send_distance_cm(float distance_cm);
+void uart_send_message(const char *text, float float_value);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 float get_distance_cm(void);
@@ -122,6 +123,18 @@ void uart_setup(void) {
 }
 //---------------------------------------------------------------------------------
 
+// Функция для отправки форматированного сообщения с текстом и значением
+static void uart_send_message(const char *text, float float_value)
+{
+    char buffer[80];
+    
+    // Форматируем строку с текстом и числами
+    snprintf(buffer, sizeof(buffer), "%s %.3f\r\n", text, float_value);
+    // Отправляем сформированное сообщение
+    for (const char *p = buffer; *p; p++) {
+    usart_send_blocking(UART_DEVICE, *p);
+}
+
 // Отправка строки по UART
 void uart_send_string(const char *str) {
     while (*str) {
@@ -130,33 +143,8 @@ void uart_send_string(const char *str) {
     }
 }
 
-void my_usart_print_int(uint32_t usart, int16_t value) {
-    int8_t i;
-    int8_t nr_digits = 0;
-    char buffer[25];
-
-    if (value < 0) {
-        usart_send_blocking(usart, '-');
-        value = value * -1;
-    }
-
-    if (value == 0) {
-        usart_send_blocking(usart, '0');
-        return;
-    }
-
-    while (value > 0) {
-        buffer[nr_digits++] = "0123456789"[value % 10];
-        value /= 10;
-    }
-
-    for (i = nr_digits-1; i >= 0; i--) {
-        usart_send_blocking(usart, buffer[i]);
-    }
-
-    usart_send_blocking(usart, '\r');
-    usart_send_blocking(usart, '\n');
-}
+// Прямой вызов с текстом и числом
+//uart_send_message("Текст:", distance);
 
 // Отправка расстояния по UART
 void send_distance_cm(float distance_cm) {
