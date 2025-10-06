@@ -14,8 +14,8 @@ constexpr uint16_t ECHO_PIN = GPIO1;        // PA1 - TIM2_CH2
 
 // UART
 constexpr uint32_t UART_PORT = GPIOD;
-constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX
-constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX
+constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX <- RX(надо)
+constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX <- TX
 constexpr uint32_t UART_DEVICE = USART3;
 
 // Таймер
@@ -33,6 +33,8 @@ struct MeasurementState
     uint32_t pulse_width{0};        // Длительность импульса (тики)
     bool measurement_ready{false};  // Флаг готовности измерения
     uint32_t measurement_count{0};  // Флаг таймаута измерения
+
+    
 };
 
 // Глобальные переменные
@@ -84,7 +86,8 @@ int main(void) {
         indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
-        uart_send_message(distance_cm," См ");
+        uart_send_message(distance_cm, " См");
+        //send_distance_cm(distance_cm);
 
         // Задержка между измерениями
         delay_ms(60);
@@ -119,13 +122,13 @@ void uart_setup(void) {
 // Функция для отправки форматированного сообщения с текстом и значением
 void uart_send_message(float float_value, const char *text)
 {
-    char buffer[80];
+    char buffer1[80];
     
     // Форматируем строку с текстом и числами
-    snprintf(buffer, sizeof(buffer),"%s %.3f\r\n", float_value, text);
+    snprintf(buffer1, sizeof(buffer1)," %.2f %s \r\n", float_value, text);
     
     // Отправляем сформированное сообщение
-    for (const char *p = buffer; *p; p++) 
+    for (const char *p = buffer1; *p; p++) 
     {
         usart_send_blocking(UART_DEVICE, *p);
     }
@@ -139,18 +142,49 @@ void uart_send_string(const char *str) {
     }
 }
 
+void my_usart_print_int(uint32_t usart, int16_t value) {
+    int8_t i;
+    int8_t nr_digits = 0;
+    char buffer[25];
+
+    if (value < 0) {
+        usart_send_blocking(usart, '-');
+        value = value * -1;
+    }
+
+    if (value == 0) {
+        usart_send_blocking(usart, '0');
+        return;
+    }
+
+    while (value > 0) {
+        buffer[nr_digits++] = "0123456789"[value % 10];
+        value /= 10;
+    }
+
+    for (i = nr_digits-1; i >= 0; i--) {
+        usart_send_blocking(usart, buffer[i]);
+    }
+
+    usart_send_blocking(usart, '\r');
+    usart_send_blocking(usart, '\n');
+}
+
+
 // Прямой вызов с текстом и числом
 // uart_send_message("Текст:", distance);
 
 // Отправка расстояния по UART
+
 void send_distance_cm(float distance_cm) {
     char uart_buffer[64];
     
     if (distance_cm < 0) {
-        snprintf(uart_buffer, sizeof(uart_buffer), "Ошибка: тайм-аут измерения или расстояние\r\n");
-        uart_send_string(uart_buffer);
+        my_usart_print_int(UART_DEVICE, static_cast<int16_t>(distance_cm*10));
+        //snprintf(uart_buffer, sizeof(uart_buffer), "Ошибка: тайм-аут измерения или расстояние\r\n");
+        //uart_send_string(uart_buffer);
     } else {
-        my_usart_print_int(UART_DEVICE, static_cast<int16_t>(distance_cm));
+        my_usart_print_int(UART_DEVICE, static_cast<int16_t>(distance_cm*10));
     }
 }
 
@@ -246,8 +280,8 @@ float measure_distance(void) {
     g_measurement.measurement_ready = false;
     
     // Отправка запускающего импульса на HC-SR04
-    constexpr uint32_t TRIG_LOW_DELAY_US = 4;   // Ожидание перед импульсом
-    constexpr uint32_t TRIG_HIGH_DELAY_US = 12; // Длительность триггерного импульса
+    constexpr uint32_t TRIG_LOW_DELAY_US = 2;   // Ожидание перед импульсом
+    constexpr uint32_t TRIG_HIGH_DELAY_US = 10; // Длительность триггерного импульса
 
     // Низкий уровень перед импульсом
     gpio_clear(TRIG_PORT, TRIG_PIN);
@@ -267,10 +301,10 @@ float measure_distance(void) {
     {
         if (g_measurement.measurement_ready) // Ожидаем true в прерывании таймера
         {
-            const float distance = get_distance_cm();
+            float distance = get_distance_cm();
             
         // Проверяем диапазон 2-400 см
-        if (distance >= 2.0f && distance <= 400.0f)
+        if (distance > 2.0f && distance < 400.0f)
         {
             return distance; // Возвращаем валидное расстояние
         }
@@ -279,7 +313,7 @@ float measure_distance(void) {
             // Вывод сообщения об ошибке в UART
             if (distance < 2.0f)
             {
-                uart_send_string("ОШИБКА: Cлишком маленькое расстояние (< 2 см) (< 2 cm)\r\n");
+                uart_send_string("ОШИБКА: Cлишком маленькое расстояние (< 2 см)\r\n");
             }
             else if (distance > 400.0f)
             {
@@ -289,7 +323,7 @@ float measure_distance(void) {
             {
                 uart_send_string("ОШИБКА: Неверное измерение расстояния\r\n");
             }
-            return -1.0f; // Ошибка
+            //return -1.0f; // Ошибка
         }
     }
     
@@ -302,7 +336,7 @@ float measure_distance(void) {
 float get_distance_cm(void) 
 {
     constexpr float SOUND_SPEED_CM_PER_US = 0.034f; // Скорость звука в см/мкс
-    return (g_measurement.pulse_width * SOUND_SPEED_CM_PER_US) / 2.0f; // Расстояние до объекта в см/мск
+    return (float(g_measurement.pulse_width) * SOUND_SPEED_CM_PER_US) / 2.0f; // Расстояние до объекта в см/мск
 }
 
 // Инициализация светодиода
@@ -319,14 +353,18 @@ void led_setup(void) {
 
 // Индикация состояния измерения светодиодом
 void indicate_measurement(float distance) {
-    if (distance < 2 && distance > 400) {   // При ошибочных измерениях
+    if (distance < 2.0f  || distance > 400.0f) {   // При ошибочных измерениях
         gpio_set(LED_PORT, LED_PIN);
-        delay_ms(50);
+        delay_ms(60);
         gpio_clear(LED_PORT, LED_PIN);
     } 
-    else if (distance > 2 && distance < 400) { // При правильных измерениях
+    else if (distance > 2.0f && distance < 400.0f) { // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
-        delay_ms(25);
+        delay_ms(20);
+        gpio_clear(LED_PORT, LED_PIN);
+        delay_ms(20);
+        gpio_set(LED_PORT, LED_PIN);
+        delay_ms(20);
         gpio_clear(LED_PORT, LED_PIN);
     }
 }
