@@ -49,14 +49,13 @@ void timer_setup(void);
 void tim2_isr(void);
 void led_setup(void);
 void uart_send_string(const char *str);
-void send_distance_cm(float distance_cm);
-void uart_send_message(float float_value, const char *text);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
-float get_distance_cm(void);
-float measure_distance(void);
-void indicate_measurement(float distance);
-void my_usart_print_int(uint32_t usart, int16_t value);
+uint16_t get_distance_cm(void);
+uint16_t measure_distance(void);
+void indicate_measurement(uint16_t distance);
+void send_distance_cm(int value);
+
 
 // Основная функция программы
 int main(void) {
@@ -70,7 +69,7 @@ int main(void) {
     led_setup();
     
     // Переменная для хранения расстояния
-    float distance_cm = 0;
+    uint16_t distance_cm = 0;
     
     // Небольшая задержка для стабилизации системы
     delay_ms(100);
@@ -82,12 +81,11 @@ int main(void) {
         // Выполняем измерение расстояния
         distance_cm = measure_distance();
         
-        // Индикация результата
+        // Индикация результата на светодиодах
         indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
-        uart_send_message(distance_cm, " См");
-        //send_distance_cm(distance_cm);
+        send_distance_cm(distance_cm);
 
         // Задержка между измерениями
         delay_ms(60);
@@ -119,21 +117,6 @@ void uart_setup(void) {
 }
 //---------------------------------------------------------------------------------
 
-// Функция для отправки форматированного сообщения с текстом и значением
-void uart_send_message(float float_value, const char *text)
-{
-    char buffer1[80];
-    
-    // Форматируем строку с текстом и числами
-    snprintf(buffer1, sizeof(buffer1)," %.2f %s \r\n", float_value, text);
-    
-    // Отправляем сформированное сообщение
-    for (const char *p = buffer1; *p; p++) 
-    {
-        usart_send_blocking(UART_DEVICE, *p);
-    }
-}
-
 // Отправка строки по UART
 void uart_send_string(const char *str) {
     while (*str) {
@@ -142,51 +125,19 @@ void uart_send_string(const char *str) {
     }
 }
 
-void my_usart_print_int(uint32_t usart, int16_t value) {
-    int8_t i;
-    int8_t nr_digits = 0;
-    char buffer[25];
-
-    if (value < 0) {
-        usart_send_blocking(usart, '-');
-        value = value * -1;
-    }
-
-    if (value == 0) {
-        usart_send_blocking(usart, '0');
-        return;
-    }
-
-    while (value > 0) {
-        buffer[nr_digits++] = "0123456789"[value % 10];
-        value /= 10;
-    }
-
-    for (i = nr_digits-1; i >= 0; i--) {
-        usart_send_blocking(usart, buffer[i]);
-    }
-
-    usart_send_blocking(usart, '\r');
-    usart_send_blocking(usart, '\n');
-}
-
-
-// Прямой вызов с текстом и числом
-// uart_send_message("Текст:", distance);
-
-// Отправка расстояния по UART
-
-void send_distance_cm(float distance_cm) {
-    char uart_buffer[64];
+// Отправка числа int по UART
+void send_distance_cm(int value) {
+    char buffer[16];
     
-    if (distance_cm < 0) {
-        my_usart_print_int(UART_DEVICE, static_cast<int16_t>(distance_cm*10));
-        //snprintf(uart_buffer, sizeof(uart_buffer), "Ошибка: тайм-аут измерения или расстояние\r\n");
-        //uart_send_string(uart_buffer);
-    } else {
-        my_usart_print_int(UART_DEVICE, static_cast<int16_t>(distance_cm*10));
+    // Преобразуем число в строку
+    snprintf(buffer, sizeof(buffer), "%d\r\n", value);
+    
+    // Отправляем строку
+    for (char *p = buffer; *p; p++) {
+        usart_send_blocking(UART_DEVICE, *p);
     }
 }
+
 
 //---------------------------------------------------------------------------------
 // Инициализация GPIO
@@ -269,7 +220,7 @@ void tim2_isr(void) {
 }
 
 // Функция измерения расстояния с таймаутом
-float measure_distance(void) {
+uint16_t measure_distance(void) {
 
     constexpr uint32_t MEASUREMENT_TIMEOUT_MS = 100; // Таймаут 100 мс
     
@@ -280,8 +231,8 @@ float measure_distance(void) {
     g_measurement.measurement_ready = false;
     
     // Отправка запускающего импульса на HC-SR04
-    constexpr uint32_t TRIG_LOW_DELAY_US = 2;   // Ожидание перед импульсом
-    constexpr uint32_t TRIG_HIGH_DELAY_US = 10; // Длительность триггерного импульса
+    constexpr uint32_t TRIG_LOW_DELAY_US = 4;   // Ожидание перед импульсом
+    constexpr uint32_t TRIG_HIGH_DELAY_US = 12; // Длительность триггерного импульса
 
     // Низкий уровень перед импульсом
     gpio_clear(TRIG_PORT, TRIG_PIN);
@@ -301,42 +252,24 @@ float measure_distance(void) {
     {
         if (g_measurement.measurement_ready) // Ожидаем true в прерывании таймера
         {
-            float distance = get_distance_cm();
+            uint16_t distance = get_distance_cm();
             
         // Проверяем диапазон 2-400 см
-        if (distance > 2.0f && distance < 400.0f)
+        if (distance >= 2 && distance <= 400)
         {
             return distance; // Возвращаем валидное расстояние
         }
-        else
-        {
-            // Вывод сообщения об ошибке в UART
-            if (distance < 2.0f)
-            {
-                uart_send_string("ОШИБКА: Cлишком маленькое расстояние (< 2 см)\r\n");
-            }
-            else if (distance > 400.0f)
-            {
-                uart_send_string("ОШИБКА: Cлишком большое расстояние (> 400 см)\r\n");
-            }
-            else
-            {
-                uart_send_string("ОШИБКА: Неверное измерение расстояния\r\n");
-            }
-            //return -1.0f; // Ошибка
+
         }
-    }
-    
     // Таймаут срабатывает если за 100 мс не получен ECHO-импульс
-    return -1.0f;
+    return 0;
     }
 }
 
 // Вычисление расстояния в сантиметрах
-float get_distance_cm(void) 
+uint16_t get_distance_cm(void) 
 {
-    constexpr float SOUND_SPEED_CM_PER_US = 0.034f; // Скорость звука в см/мкс
-    return (float(g_measurement.pulse_width) * SOUND_SPEED_CM_PER_US) / 2.0f; // Расстояние до объекта в см/мск
+    return (uint16_t)((g_measurement.pulse_width * 17) / 1000); // Расстояние до объекта в см/мск
 }
 
 // Инициализация светодиода
@@ -352,13 +285,13 @@ void led_setup(void) {
 }
 
 // Индикация состояния измерения светодиодом
-void indicate_measurement(float distance) {
-    if (distance < 2.0f  || distance > 400.0f) {   // При ошибочных измерениях
+void indicate_measurement(uint16_t distance) {
+    if (distance < 2  || distance > 400) {   // При ошибочных измерениях
         gpio_set(LED_PORT, LED_PIN);
         delay_ms(60);
         gpio_clear(LED_PORT, LED_PIN);
     } 
-    else if (distance > 2.0f && distance < 400.0f) { // При правильных измерениях
+    else if (distance >= 2 && distance <= 400) { // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
         delay_ms(20);
         gpio_clear(LED_PORT, LED_PIN);
