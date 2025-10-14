@@ -5,14 +5,6 @@
 #include <libopencm3/stm32/usart.h>
 #include <stdbool.h>
 #include <stdio.h>
-
-
-
-
-
-
-#include <libopencm3/stm32/rcc.h>
-#include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
 
 // Настройка тактирования
@@ -23,28 +15,6 @@ void clock_setup(void)
     // Включаем тактирование SPI2 и GPIO
     rcc_periph_clock_enable(RCC_SPI2);
     rcc_periph_clock_enable(RCC_GPIOB);
-}
-
-// Настройка GPIO для SPI2 в режиме ведомого
-void gpio_setup(void)
-{
-    // SPI2 на выводах PB13, PB14, PB15, PB12
-    // PB13 - SCK (вход), PB14 - MISO (выход), PB15 - MOSI (вход), PB12 - NSS (вход)
-    
-    // SCK (вход)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLDOWN, GPIO13);
-    
-    // MOSI (вход)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO15);
-    
-    // MISO (выход)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO14);
-    
-    // NSS (вход с подтяжкой)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO12);
-    
-    // Установка альтернативной функции SPI2 (AF5)
-    gpio_set_af(GPIOB, GPIO_AF5, GPIO12 | GPIO13 | GPIO14 | GPIO15);
 }
 
 // Настройка SPI2 в режиме ведомого
@@ -58,14 +28,15 @@ void spi2_slave_setup(void)
     SPI_CR2(SPI2) = 0;
     
     // Настройка параметров SPI
-    spi_set_mode_16(SPI2, false);                    // 8-битный режим
-    spi_set_clock_polarity_1(SPI2, SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE);
-    spi_set_clock_phase_1(SPI2, SPI_CR1_CPHA_CLK_TRANSITION_1);
+    spi_set_slave_mode(SPI2);                    // 8-битный режим
+    spi_set_baudrate_prescaler(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_32);
+    spi_set_clock_polarity_0(SPI2);
+    spi_set_clock_phase_0(SPI2);
+    spi_set_dff_8bit(SPI2);
     spi_send_msb_first(SPI2);
     
-    // Настройка режима ведомого
-    spi_set_master_mode(SPI2, false);                // Режим ведомого
-    
+    spi_set_full_duplex_mode(SPI2);
+
     // Аппаратное управление NSS
     spi_disable_software_slave_management(SPI2);
     spi_set_nss_low(SPI2);
@@ -85,7 +56,7 @@ void spi2_slave_send(uint8_t data)
     while (!(SPI_SR(SPI2) & SPI_SR_TXE));
     
     // Записываем данные для отправки
-    spi_send8(SPI2, data);
+    spi_send(SPI2, data);
 }
 
 // Функция для чтения принятых данных
@@ -95,7 +66,7 @@ uint8_t spi2_slave_receive(void)
     while (!(SPI_SR(SPI2) & SPI_SR_RXNE));
     
     // Читаем принятые данные
-    return spi_read8(SPI2);
+    return spi_read(SPI2);
 }
 
 // Проверка активности NSS (выбор ведомого)
@@ -109,7 +80,7 @@ void spi2_isr(void)
 {
     // Проверяем флаг приема данных
     if (SPI_SR(SPI2) & SPI_SR_RXNE) {
-        uint8_t received_data = spi_read8(SPI2);
+        uint8_t received_data = spi_read(SPI2);
         
         // Обработка принятых данных
         // ...
@@ -122,6 +93,8 @@ void spi2_isr(void)
     }
 }
 
+
+
 // Настройка NVIC для прерываний SPI2
 void nvic_setup(void)
 {
@@ -129,46 +102,11 @@ void nvic_setup(void)
     nvic_set_priority(NVIC_SPI2_IRQ, 1);
 }
 
-// Пример использования в режиме ведомого
-int main(void)
-{
-    clock_setup();
-    gpio_setup();
-    spi2_slave_setup();
-    nvic_setup(); // Если используем прерывания
-    
-    uint8_t tx_data = 0x00;
-    uint8_t rx_data;
-    
-    while (1) {
-        // Проверяем, выбран ли ведомый
-        if (spi2_slave_selected()) {
-            // Если есть данные для отправки - отправляем
-            spi2_slave_send(tx_data);
-            
-            // Пытаемся прочитать принятые данные
-            if (SPI_SR(SPI2) & SPI_SR_RXNE) {
-                rx_data = spi2_slave_receive();
-                
-                // Обработка принятых данных
-                // Например, обновляем данные для отправки
-                tx_data = rx_data + 1;
-            }
-        }
-        
-        // Можно добавить обработку других задач
-    }
-    
-    return 0;
-}
-
-
-
-
-
-
 
 // ___________________
+
+
+
 // Пины и периферия
 constexpr uint32_t TRIG_PORT = GPIOA;
 constexpr uint16_t TRIG_PIN = GPIO0;        // PA0 - TIM2_CH1
@@ -203,8 +141,6 @@ struct MeasurementState
 // Глобальные переменные
 static volatile MeasurementState g_measurement;
 
-
-
 // Прототипы функций
 void uart_setup(void);
 void gpio_setup(void);
@@ -217,19 +153,31 @@ void delay_ms(uint32_t ms);
 uint16_t get_distance_cm(void);
 uint16_t measure_distance(void);
 void indicate_measurement(uint16_t distance);
+
 void send_distance_cm(int value);
+void my_usart_print_int(uint32_t usart, int16_t value);
+
+void clock_setup(void);
+void spi2_slave_setup(void);
+void spi2_slave_send(uint8_t data);
+bool spi2_slave_selected(void);
+
+void spi2_isr(void);
+
+
 
 
 // Основная функция программы
 int main(void) {
     // Настройка системных часов на 84 МГц от HSE 8 МГц
-    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
+    clock_setup();
     
     // Инициализация периферии
     uart_setup();
     gpio_setup();
     timer_setup();
     led_setup();
+    spi2_slave_setup();
     
     // Переменная для хранения расстояния
     uint16_t distance_cm = 0;
@@ -239,19 +187,39 @@ int main(void) {
     
     uart_send_string("HC-SR04 Distance Measurement Started\r\n");
     
+
+    uint8_t tx_data = 0x00;
+    uint8_t rx_data;
+
     // Основной цикл программы
     while (true) {
-        // Выполняем измерение расстояния
+        
+         // Выполняем измерение расстояния
         distance_cm = measure_distance();
         
         // Индикация результата на светодиодах
         indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
-        send_distance_cm(distance_cm);
+        //send_distance_cm(distance_cm);
+        my_usart_print_int(UART_DEVICE, distance_cm);
+
+        // Проверяем, выбран ли ведомый
+        if (spi2_slave_selected()) {
+            // Если есть данные для отправки - отправляем
+            spi2_slave_send('$');
+            spi2_slave_send('2');
+            spi2_slave_send('1');
+            spi2_slave_send('2');
+            spi2_slave_send(';');
+            
+
+        }
+        
 
         // Задержка между измерениями
-        delay_ms(60);
+        delay_ms(10000);
+
     }
     
     return 0;
@@ -301,6 +269,33 @@ void send_distance_cm(int value) {
     }
 }
 
+void my_usart_print_int(uint32_t usart, int16_t value) {
+    int8_t i;
+    int8_t nr_digits = 0;
+    char buffer[25];
+
+    if (value < 0) {
+        usart_send_blocking(usart, '-');
+        value = value * -1;
+    }
+
+    if (value == 0) {
+        usart_send_blocking(usart, '0');
+        return;
+    }
+
+    while (value > 0) {
+        buffer[nr_digits++] = "0123456789"[value % 10];
+        value /= 10;
+    }
+
+    for (i = nr_digits-1; i >= 0; i--) {
+        usart_send_blocking(usart, buffer[i]);
+    }
+
+    usart_send_blocking(usart, '\r');
+    usart_send_blocking(usart, '\n');
+}
 
 //---------------------------------------------------------------------------------
 // Инициализация GPIO
@@ -318,6 +313,26 @@ void gpio_setup(void) {
     
     // Изначально устанавливаем TRIG в низкий уровень
     gpio_clear(TRIG_PORT, TRIG_PIN);
+
+
+    // SPI2 на выводах PB13, PB14, PB15, PB12
+    // PB13 - SCK (вход), PB14 - MISO (выход), PB15 - MOSI (вход), PB12 - NSS (вход)
+    
+    // SCK (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLDOWN, GPIO13);
+    
+    // MOSI (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO15);
+    
+    // MISO (выход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO14);
+    
+    // NSS (вход с подтяжкой)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO12);
+    
+    // Установка альтернативной функции SPI2 (AF5)
+    gpio_set_af(GPIOB, GPIO_AF5, GPIO12 | GPIO13 | GPIO14 | GPIO15);
+
 }
 
 // Инициализация таймера TIM2 для Capture измерений
