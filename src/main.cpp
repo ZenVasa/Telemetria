@@ -6,6 +6,169 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+
+
+
+
+
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/gpio.h>
+#include <libopencm3/stm32/spi.h>
+
+// Настройка тактирования
+void clock_setup(void)
+{
+    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
+    
+    // Включаем тактирование SPI2 и GPIO
+    rcc_periph_clock_enable(RCC_SPI2);
+    rcc_periph_clock_enable(RCC_GPIOB);
+}
+
+// Настройка GPIO для SPI2 в режиме ведомого
+void gpio_setup(void)
+{
+    // SPI2 на выводах PB13, PB14, PB15, PB12
+    // PB13 - SCK (вход), PB14 - MISO (выход), PB15 - MOSI (вход), PB12 - NSS (вход)
+    
+    // SCK (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLDOWN, GPIO13);
+    
+    // MOSI (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO15);
+    
+    // MISO (выход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO14);
+    
+    // NSS (вход с подтяжкой)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO12);
+    
+    // Установка альтернативной функции SPI2 (AF5)
+    gpio_set_af(GPIOB, GPIO_AF5, GPIO12 | GPIO13 | GPIO14 | GPIO15);
+}
+
+// Настройка SPI2 в режиме ведомого
+void spi2_slave_setup(void)
+{
+    // Сброс SPI2
+    spi_disable(SPI2);
+    
+    // Инициализация SPI в режиме ведомого
+    SPI_CR1(SPI2) = 0;
+    SPI_CR2(SPI2) = 0;
+    
+    // Настройка параметров SPI
+    spi_set_mode_16(SPI2, false);                    // 8-битный режим
+    spi_set_clock_polarity_1(SPI2, SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE);
+    spi_set_clock_phase_1(SPI2, SPI_CR1_CPHA_CLK_TRANSITION_1);
+    spi_send_msb_first(SPI2);
+    
+    // Настройка режима ведомого
+    spi_set_master_mode(SPI2, false);                // Режим ведомого
+    
+    // Аппаратное управление NSS
+    spi_disable_software_slave_management(SPI2);
+    spi_set_nss_low(SPI2);
+    
+    // Включаем прерывания (опционально)
+    spi_enable_rx_buffer_not_empty_interrupt(SPI2);
+    spi_enable_tx_buffer_empty_interrupt(SPI2);
+    
+    // Включаем SPI
+    spi_enable(SPI2);
+}
+
+// Функция для отправки данных (когда мастер запрашивает)
+void spi2_slave_send(uint8_t data)
+{
+    // Ждем, когда буфер передачи станет пустым
+    while (!(SPI_SR(SPI2) & SPI_SR_TXE));
+    
+    // Записываем данные для отправки
+    spi_send8(SPI2, data);
+}
+
+// Функция для чтения принятых данных
+uint8_t spi2_slave_receive(void)
+{
+    // Ждем, когда появятся данные в буфере приема
+    while (!(SPI_SR(SPI2) & SPI_SR_RXNE));
+    
+    // Читаем принятые данные
+    return spi_read8(SPI2);
+}
+
+// Проверка активности NSS (выбор ведомого)
+bool spi2_slave_selected(void)
+{
+    return (gpio_get(GPIOB, GPIO12) == 0); // NSS активен в низком уровне
+}
+
+// Обработчик прерываний SPI2 (если используются прерывания)
+void spi2_isr(void)
+{
+    // Проверяем флаг приема данных
+    if (SPI_SR(SPI2) & SPI_SR_RXNE) {
+        uint8_t received_data = spi_read8(SPI2);
+        
+        // Обработка принятых данных
+        // ...
+    }
+    
+    // Проверяем флаг готовности передачи
+    if (SPI_SR(SPI2) & SPI_SR_TXE) {
+        // Можно записать новые данные для отправки
+        // spi_send8(SPI2, next_data);
+    }
+}
+
+// Настройка NVIC для прерываний SPI2
+void nvic_setup(void)
+{
+    nvic_enable_irq(NVIC_SPI2_IRQ);
+    nvic_set_priority(NVIC_SPI2_IRQ, 1);
+}
+
+// Пример использования в режиме ведомого
+int main(void)
+{
+    clock_setup();
+    gpio_setup();
+    spi2_slave_setup();
+    nvic_setup(); // Если используем прерывания
+    
+    uint8_t tx_data = 0x00;
+    uint8_t rx_data;
+    
+    while (1) {
+        // Проверяем, выбран ли ведомый
+        if (spi2_slave_selected()) {
+            // Если есть данные для отправки - отправляем
+            spi2_slave_send(tx_data);
+            
+            // Пытаемся прочитать принятые данные
+            if (SPI_SR(SPI2) & SPI_SR_RXNE) {
+                rx_data = spi2_slave_receive();
+                
+                // Обработка принятых данных
+                // Например, обновляем данные для отправки
+                tx_data = rx_data + 1;
+            }
+        }
+        
+        // Можно добавить обработку других задач
+    }
+    
+    return 0;
+}
+
+
+
+
+
+
+
+// ___________________
 // Пины и периферия
 constexpr uint32_t TRIG_PORT = GPIOA;
 constexpr uint16_t TRIG_PIN = GPIO0;        // PA0 - TIM2_CH1
