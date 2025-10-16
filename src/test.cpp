@@ -11,6 +11,10 @@
 #define SPI_MOSI_PIN GPIO15
 #define SPI_NSS_PIN GPIO12
 
+// LED
+constexpr uint32_t LED_PORT = GPIOD;
+constexpr uint16_t LED_PIN = GPIO15;
+
 // Прототипы функций
 void clock_setup(void);
 void gpio_setup(void);
@@ -18,6 +22,7 @@ void spi2_slave_setup(void);
 void spi2_slave_send(uint8_t data);
 bool spi2_slave_selected(void);
 void delay_ms(uint32_t ms);
+void led_setup(void);
 
 // Настройка тактирования
 void clock_setup(void)
@@ -56,23 +61,21 @@ void spi2_slave_setup(void)
     // Disable SPI перед настройкой
     spi_disable(SPI_DEVICE);
     
-    // Очищаем регистры
-    SPI_CR1(SPI_DEVICE) = 0;
-    SPI_CR2(SPI_DEVICE) = 0;
-    
     // Настройка режима ведомого
     spi_set_slave_mode(SPI_DEVICE);
-    
+
     // Настройка формата данных
+    spi_set_baudrate_prescaler(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_256);
     spi_set_clock_polarity_0(SPI_DEVICE);  // CPOL = 0
     spi_set_clock_phase_0(SPI_DEVICE);     // CPHA = 0
-    spi_set_data_size(SPI_DEVICE, SPI_CR2_DS_8BIT);  // 8 бит данных
     spi_set_full_duplex_mode(SPI_DEVICE);  // Полнодуплексный режим
+    spi_set_dff_8bit(SPI_DEVICE);  // 8 бит данных
+    
     spi_send_msb_first(SPI_DEVICE);        // Старший бит первый
     
     // Аппаратное управление NSS
     spi_disable_software_slave_management(SPI_DEVICE);
-    spi_set_nss_low(SPI_DEVICE);
+    
     
     // Включаем SPI
     spi_enable(SPI_DEVICE);
@@ -82,12 +85,13 @@ void spi2_slave_setup(void)
 void spi2_slave_send(uint8_t data)
 {
     // Ждем, когда буфер передачи станет пустым
-    while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
+    /*while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
         // Ожидание готовности
     }
-    
+    */
     // Записываем данные для отправки
-    SPI_DR(SPI_DEVICE) = data;
+    //SPI_DR(SPI_DEVICE) = data;
+    spi_send(SPI2, '2');
 }
 
 // Проверка активности NSS (выбор ведомого)
@@ -111,31 +115,50 @@ int main(void) {
     
     // Инициализация периферии
     gpio_setup();
+    led_setup();
     spi2_slave_setup();
     
     // Небольшая задержка для стабилизации системы
     delay_ms(100);
     
-    uint8_t counter = 0;
     
     // Основной цикл программы
     while (true) {
         // Проверяем, выбран ли ведомый
         if (spi2_slave_selected()) {
             // Отправляем данные через spi2_slave_send
-            spi2_slave_send(counter);
-            counter++;
+            /*spi2_slave_send('$');
+            spi2_slave_send('2');
+            spi2_slave_send('1');
+            spi2_slave_send('2');
+            spi2_slave_send(';');*/
+            spi_send(SPI2, 'D');
+            gpio_set(LED_PORT, LED_PIN);
+            delay_ms(1000);
+            gpio_clear(LED_PORT, LED_PIN);
+            delay_ms(1000);
+
         }
+
         
-        // Задержка между проверками
-        delay_ms(10);
     }
     
     return 0;
 }
+// Инициализация светодиода
+void led_setup(void) {
+    // Включаем тактирование порта D
+    rcc_periph_clock_enable(RCC_GPIOD); 
+    // Настраиваем пин как выход        
+    gpio_mode_setup(LED_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, LED_PIN); 
+    // Скорость переключения
+    //gpio_set_output_options(LED_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, LED_PIN);
+    // Гарантируем выключенное состояние 
+    gpio_clear(LED_PORT, LED_PIN); 
+}
 
 //________
-
+/*
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
@@ -275,6 +298,16 @@ int main(void) {
     
     return 0;
 }
+
+*/
+
+
+
+
+
+
+
+
 
 
 /*
