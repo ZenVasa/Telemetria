@@ -3,6 +3,144 @@
 #include <libopencm3/stm32/spi.h>
 #include <stdbool.h>
 
+// Константы для SPI
+#define SPI_DEVICE SPI2
+#define SPI_PORT GPIOB
+#define SPI_SCK_PIN GPIO13
+#define SPI_MISO_PIN GPIO14
+#define SPI_MOSI_PIN GPIO15
+#define SPI_NSS_PIN GPIO12
+
+// Прототипы функций
+void clock_setup(void);
+void gpio_setup(void);
+void spi2_slave_setup(void);
+void spi2_slave_send(uint8_t data);
+bool spi2_slave_selected(void);
+void delay_ms(uint32_t ms);
+
+// Настройка тактирования
+void clock_setup(void)
+{
+    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
+    
+    // Включаем тактирование периферии
+    rcc_periph_clock_enable(RCC_SPI2);
+    rcc_periph_clock_enable(RCC_GPIOB);
+}
+
+// Настройка GPIO для SPI
+void gpio_setup(void)
+{
+    // SPI2 на выводах PB13(SCK), PB14(MISO), PB15(MOSI), PB12(NSS)
+    
+    // SCK (вход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_SCK_PIN);
+    
+    // MOSI (вход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MOSI_PIN);
+    
+    // MISO (выход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MISO_PIN);
+    
+    // NSS (вход с подтяжкой к VCC)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, SPI_NSS_PIN);
+    
+    // Установка альтернативной функции SPI2 (AF5)
+    gpio_set_af(SPI_PORT, GPIO_AF5, SPI_SCK_PIN | SPI_MISO_PIN | SPI_MOSI_PIN | SPI_NSS_PIN);
+}
+
+// Настройка SPI2 в режиме ведомого
+void spi2_slave_setup(void)
+{
+    // Disable SPI перед настройкой
+    spi_disable(SPI_DEVICE);
+    
+    // Очищаем регистры
+    SPI_CR1(SPI_DEVICE) = 0;
+    SPI_CR2(SPI_DEVICE) = 0;
+    
+    // Настройка режима ведомого
+    spi_set_slave_mode(SPI_DEVICE);
+    
+    // Настройка формата данных
+    spi_set_clock_polarity_0(SPI_DEVICE);  // CPOL = 0
+    spi_set_clock_phase_0(SPI_DEVICE);     // CPHA = 0
+    spi_set_data_size(SPI_DEVICE, SPI_CR2_DS_8BIT);  // 8 бит данных
+    spi_set_full_duplex_mode(SPI_DEVICE);  // Полнодуплексный режим
+    spi_send_msb_first(SPI_DEVICE);        // Старший бит первый
+    
+    // Аппаратное управление NSS
+    spi_disable_software_slave_management(SPI_DEVICE);
+    spi_set_nss_low(SPI_DEVICE);
+    
+    // Включаем SPI
+    spi_enable(SPI_DEVICE);
+}
+
+// Функция для отправки данных
+void spi2_slave_send(uint8_t data)
+{
+    // Ждем, когда буфер передачи станет пустым
+    while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
+        // Ожидание готовности
+    }
+    
+    // Записываем данные для отправки
+    SPI_DR(SPI_DEVICE) = data;
+}
+
+// Проверка активности NSS (выбор ведомого)
+bool spi2_slave_selected(void)
+{
+    // NSS активен в низком уровне
+    return (gpio_get(SPI_PORT, SPI_NSS_PIN) == 0);
+}
+
+// Задержка в миллисекундах
+void delay_ms(uint32_t ms) {
+    for (uint32_t i = 0; i < ms * 2000; i++) {
+        __asm__("nop");
+    }
+}
+
+// Основная функция программы
+int main(void) {
+    // Настройка системных часов
+    clock_setup();
+    
+    // Инициализация периферии
+    gpio_setup();
+    spi2_slave_setup();
+    
+    // Небольшая задержка для стабилизации системы
+    delay_ms(100);
+    
+    uint8_t counter = 0;
+    
+    // Основной цикл программы
+    while (true) {
+        // Проверяем, выбран ли ведомый
+        if (spi2_slave_selected()) {
+            // Отправляем данные через spi2_slave_send
+            spi2_slave_send(counter);
+            counter++;
+        }
+        
+        // Задержка между проверками
+        delay_ms(10);
+    }
+    
+    return 0;
+}
+
+//________
+
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/gpio.h>
+#include <libopencm3/stm32/spi.h>
+#include <stdbool.h>
+
 
 
 void gpio_setup(void);
