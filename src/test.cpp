@@ -1,7 +1,20 @@
 #include <libopencm3/stm32/rcc.h>
-#include <libopencm32/stm32/gpio.h>
+#include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
 #include <stdbool.h>
+
+
+
+void gpio_setup(void);
+
+void delay_us(uint32_t us);
+void delay_ms(uint32_t ms);
+
+void clock_setup(void);
+void spi2_slave_setup(void);
+void spi2_slave_send(uint8_t data);
+bool spi2_slave_selected(void);
+
 
 // Настройка тактирования
 void clock_setup(void)
@@ -20,12 +33,14 @@ void spi2_slave_setup(void)
     spi_disable(SPI2);
     
     // Настройка параметров SPI для ведомого
-    spi_init_master(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_8, SPI_CR1_CPOL_CLK_TO_0,
-                   SPI_CR1_CPHA_CLK_TRANSITION_1, SPI_CR1_DFF_8BIT,
-                   SPI_CR1_MSBFIRST);
+    spi_init_master(SPI2, 
+                    SPI_CR1_BAUDRATE_FPCLK_DIV_256, 
+                    SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE,
+                    SPI_CR1_CPHA_CLK_TRANSITION_1, 
+                    SPI_CR1_DFF_8BIT,
+                    SPI_CR1_MSBFIRST);
     
-    // Переключаем в режим ведомого
-    spi_set_slave_mode(SPI2);
+    //spi_set_slave_mode(SPI2);
     
     // Аппаратное управление NSS
     spi_disable_software_slave_management(SPI2);
@@ -33,8 +48,7 @@ void spi2_slave_setup(void)
     
     // Включаем SPI
     spi_enable(SPI2);
-    
-    printf("SPI2 Slave initialized\r\n");
+
 }
 
 // Улучшенная функция отправки данных
@@ -89,6 +103,7 @@ void gpio_setup(void)
 }
 
 // Простая задержка
+
 void delay_ms(uint32_t ms)
 {
     for (uint32_t i = 0; i < ms * 1000; i++) {
@@ -96,6 +111,35 @@ void delay_ms(uint32_t ms)
     }
 }
 
+// Основная функция программы
+int main(void) {
+    // Настройка системных часов на 164 МГц 
+    clock_setup();
+    // Инициализация периферии
+    gpio_setup();
+    spi2_slave_setup();
+
+
+    // Основной цикл программы
+    while (true) {
+
+        // Проверяем, выбран ли ведомый
+        spi2_slave_send('$');
+        spi2_slave_send('2');
+        spi2_slave_send('1');
+        spi2_slave_send('2');
+        spi2_slave_send(';');
+        delay_ms(100);
+        
+
+
+    }
+    
+    return 0;
+}
+
+
+/*
 int main(void)
 {
     clock_setup();
@@ -106,12 +150,11 @@ int main(void)
     const char message[] = "HELLO";
     uint8_t msg_index = 0;
     
-    printf("SPI Slave started\r\n");
     
     while (true) {
         // Проверяем, выбран ли ведомый
         if (spi2_slave_selected()) {
-            printf("SPI Slave selected, sending data...\r\n");
+
             
             // Отправляем данные по одному байту
             spi2_slave_send(message[msg_index]);
@@ -132,12 +175,9 @@ int main(void)
     }
     
     return 0;
-}
+}*/
 
-
-
-
-
+/*
 
 
 
@@ -275,7 +315,7 @@ void spi2_slave_send(uint8_t data)
     // Записываем данные для отправки
     spi_send(SPI2, data);
 }
-/*
+
 // Функция для чтения принятых данных
 uint8_t spi2_slave_receive(void)
 {
@@ -284,7 +324,7 @@ uint8_t spi2_slave_receive(void)
     
     // Читаем принятые данные
     return spi_read(SPI2);
-}*/
+}
 
 // Проверка активности NSS (выбор ведомого)
 bool spi2_slave_selected(void)
@@ -292,7 +332,7 @@ bool spi2_slave_selected(void)
     return (gpio_get(GPIOB, GPIO12) == 0); // NSS активен в низком уровне
 }
 
-/*
+
 // Обработчик прерываний SPI2 (если используются прерывания)
 void spi2_isr(void)
 {
@@ -310,7 +350,7 @@ void spi2_isr(void)
         // spi_send8(SPI2, next_data);
     }
 }
-*/
+
 
 // Настройка NVIC для прерываний SPI2
 void nvic_setup(void)
@@ -430,3 +470,4 @@ void delay_ms(uint32_t ms) {
         delay_us(1000);
     }
 }
+*/
