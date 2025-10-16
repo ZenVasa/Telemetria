@@ -1,4 +1,148 @@
 #include <libopencm3/stm32/rcc.h>
+#include <libopencm32/stm32/gpio.h>
+#include <libopencm3/stm32/spi.h>
+#include <stdbool.h>
+
+// Настройка тактирования
+void clock_setup(void)
+{
+    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
+    
+    // Включаем тактирование SPI2 и GPIO
+    rcc_periph_clock_enable(RCC_SPI2);
+    rcc_periph_clock_enable(RCC_GPIOB);
+}
+
+// Настройка SPI2 в режиме ведомого
+void spi2_slave_setup(void)
+{
+    // Сброс SPI2
+    spi_disable(SPI2);
+    
+    // Настройка параметров SPI для ведомого
+    spi_init_master(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_8, SPI_CR1_CPOL_CLK_TO_0,
+                   SPI_CR1_CPHA_CLK_TRANSITION_1, SPI_CR1_DFF_8BIT,
+                   SPI_CR1_MSBFIRST);
+    
+    // Переключаем в режим ведомого
+    spi_set_slave_mode(SPI2);
+    
+    // Аппаратное управление NSS
+    spi_disable_software_slave_management(SPI2);
+    spi_set_nss_low(SPI2);
+    
+    // Включаем SPI
+    spi_enable(SPI2);
+    
+    printf("SPI2 Slave initialized\r\n");
+}
+
+// Улучшенная функция отправки данных
+void spi2_slave_send(uint8_t data)
+{
+    // Ждем, когда буфер передачи станет пустым
+    while (!(SPI_SR(SPI2) & SPI_SR_TXE)) {
+        // Можно добавить таймаут
+    }
+    
+    // Записываем данные для отправки
+    SPI_DR(SPI2) = data;
+    
+    // Ждем завершения передачи
+    while (SPI_SR(SPI2) & SPI_SR_BSY) {
+        // Ожидание завершения
+    }
+}
+
+// Проверка активности NSS
+bool spi2_slave_selected(void)
+{
+    return (gpio_get(GPIOB, GPIO12) == 0); // NSS активен в низком уровне
+}
+
+// Функция для приема данных (если нужно)
+uint8_t spi2_slave_receive(void)
+{
+    while (!(SPI_SR(SPI2) & SPI_SR_RXNE));
+    return SPI_DR(SPI2);
+}
+
+// Настройка GPIO для SPI
+void gpio_setup(void)
+{
+    // SPI2 на выводах PB13(SCK), PB14(MISO), PB15(MOSI), PB12(NSS)
+    
+    // SCK (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO13);
+    
+    // MOSI (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO15);
+    
+    // MISO (выход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO14);
+    
+    // NSS (вход)
+    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO12);
+    
+    // Установка альтернативной функции SPI2 (AF5)
+    gpio_set_af(GPIOB, GPIO_AF5, GPIO12 | GPIO13 | GPIO14 | GPIO15);
+}
+
+// Простая задержка
+void delay_ms(uint32_t ms)
+{
+    for (uint32_t i = 0; i < ms * 1000; i++) {
+        __asm__("nop");
+    }
+}
+
+int main(void)
+{
+    clock_setup();
+    gpio_setup();
+    spi2_slave_setup();
+    
+    uint8_t counter = 0;
+    const char message[] = "HELLO";
+    uint8_t msg_index = 0;
+    
+    printf("SPI Slave started\r\n");
+    
+    while (true) {
+        // Проверяем, выбран ли ведомый
+        if (spi2_slave_selected()) {
+            printf("SPI Slave selected, sending data...\r\n");
+            
+            // Отправляем данные по одному байту
+            spi2_slave_send(message[msg_index]);
+            msg_index++;
+            
+            if (msg_index >= sizeof(message) - 1) {
+                msg_index = 0;
+            }
+            
+            // Небольшая задержка между байтами
+            delay_ms(10);
+        } else {
+            // Сбрасываем индекс, когда не выбран
+            msg_index = 0;
+        }
+        
+        delay_ms(100);
+    }
+    
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+#include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
