@@ -1,3 +1,19 @@
+#include <libopencm3/stm32/rcc.h>   // reset and clock control
+#include <libopencm3/stm32/gpio.h>  // general purpose input-output
+
+int main()
+{
+
+    rcc_periph_clock_enable(RCC_GPIOA);//Группа портов вывода D
+    gpio_mode_setup(GPIOA,GPIO_MODE_OUTPUT,GPIO_PUPD_NONE,GPIO1);
+
+    while (true)
+    {
+        gpio_toggle(GPIOA, GPIO1);
+        for ( volatile uint32_t i = 0; i< 2000000; i+=2 ); 
+    }
+}
+/*
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
@@ -85,10 +101,10 @@ void spi2_slave_setup(void)
 void spi2_slave_send(uint8_t data)
 {
     // Ждем, когда буфер передачи станет пустым
-    /*while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
+    *while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
         // Ожидание готовности
     }
-    */
+    
     // Записываем данные для отправки
     //SPI_DR(SPI_DEVICE) = data;
     spi_send(SPI2, '2');
@@ -127,11 +143,12 @@ int main(void) {
         // Проверяем, выбран ли ведомый
         if (spi2_slave_selected()) {
             // Отправляем данные через spi2_slave_send
-            /*spi2_slave_send('$');
+            spi2_slave_send('$');
             spi2_slave_send('2');
             spi2_slave_send('1');
             spi2_slave_send('2');
-            spi2_slave_send(';');*/
+            spi2_slave_send(';');
+
             spi_send(SPI2, 'D');
             gpio_set(LED_PORT, LED_PIN);
             delay_ms(1000);
@@ -158,7 +175,7 @@ void led_setup(void) {
 }
 
 //________
-/*
+
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
