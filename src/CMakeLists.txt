@@ -2,7 +2,9 @@ message(STATUS "\tSources")
 
 
 add_executable(${CMAKE_PROJECT_NAME}
-    main.cpp
+    main.cpp    
+    setup.cpp    
+    
     #test.cpp
 )
 

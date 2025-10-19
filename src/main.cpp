@@ -1,28 +1,13 @@
-#include <libopencm3/stm32/rcc.h>
-#include <libopencm3/stm32/gpio.h>
-#include <libopencm3/stm32/timer.h>
-#include <libopencm3/cm3/nvic.h>
-#include <libopencm3/stm32/usart.h>
-#include <libopencm3/stm32/spi.h>
-#include <stdbool.h>
-#include <stdio.h>
-
-
-
-// Пины и периферия
-constexpr uint32_t TRIG_PORT = GPIOA;
-constexpr uint16_t TRIG_PIN = GPIO0;        // PA0 - TIM2_CH1
-constexpr uint32_t ECHO_PORT = GPIOA;
-constexpr uint16_t ECHO_PIN = GPIO1;        // PA1 - TIM2_CH2
-
-
+#include "../inc/setup.hpp"
 
 // Таймер
 constexpr uint32_t MEASURE_TIMER = TIM2;
 
-// LED
-constexpr uint32_t LED_PORT = GPIOD;
-constexpr uint16_t LED_PIN = GPIO15;
+// Пины и периферия
+constexpr uint32_t TRIG_PORT = GPIOA;
+constexpr uint16_t TRIG_PIN = GPIO5;        // PA5 - TIM2_CH1 (вместо PA0)
+constexpr uint32_t ECHO_PORT = GPIOA;  
+constexpr uint16_t ECHO_PIN = GPIO3;        // PA3 - TIM2_CH4 (вместо PA1)
 
 // Структура для хранения состояния измерения
 struct MeasurementState 
@@ -37,27 +22,7 @@ struct MeasurementState
 // Глобальные переменные
 static volatile MeasurementState g_measurement;
 
-// Прототипы функций
-void uart_setup(void);
-void gpio_setup(void);
-void timer_setup(void);
 
-void tim2_isr(void);
-
-void led_setup(void);
-
-void uart_send_string(const char *str);
-void delay_us(uint32_t us);
-void delay_ms(uint32_t ms);
-
-uint16_t get_distance_cm(void);
-uint16_t measure_distance(void);
-void indicate_measurement(uint16_t distance);
-
-void send_distance_cm(int value);
-void my_usart_print_int(uint32_t usart, int16_t value);
-
-void clock_setup(void);
 
 
 // ============== MAIN =======================
@@ -67,7 +32,9 @@ int main(void) {
     clock_setup();
     
     // Инициализация периферии
-    uart_setup();
+
+    uart_setup<USART1>(GPIOA, GPIO9, GPIO10, GPIO_AF7);  // USART1 на PA9 (TX), PA10 (RX)
+
     gpio_setup();
     timer_setup();
     led_setup();
@@ -78,11 +45,8 @@ int main(void) {
     // Небольшая задержка для стабилизации системы
     delay_ms(100);
     
-    uart_send_string("HC-SR04 Distance Measurement Started\r\n");
+    uart_send_string("HC-SR04 Начато измерение расстояния\r\n");
     
-
-    uint8_t tx_data = 0x00;
-    uint8_t rx_data;
 
     // Основной цикл программы
     while (true) {
@@ -95,8 +59,8 @@ int main(void) {
         
         // Отправляем расстояние по UART
         //send_distance_cm(distance_cm);
-        uart_send_string(' см ')
-        my_usart_print_int(UART_DEVICE, distance_cm);
+        uart_send_string("См");
+        my_usart_print_int(USART1, distance_cm);
 
         // Задержка между измерениями
         delay_ms(100);
@@ -106,13 +70,12 @@ int main(void) {
     return 0;
 }
 
-
 //---------------------------------------------------------------------------------
 
 // Отправка строки по UART
 void uart_send_string(const char *str) {
     while (*str) {
-        usart_send_blocking(UART_DEVICE, *str);
+        usart_send_blocking(USART1, *str);
         str++;
     }
 }
@@ -126,7 +89,7 @@ void send_distance_cm(int value) {
     
     // Отправляем строку
     for (char *p = buffer; *p; p++) {
-        usart_send_blocking(UART_DEVICE, *p);
+        usart_send_blocking(USART1, *p);
     }
 }
 
@@ -159,42 +122,7 @@ void my_usart_print_int(uint32_t usart, int16_t value) {
 }
 
 //---------------------------------------------------------------------------------
-// Инициализация GPIO
-void gpio_setup(void) {
-    // Включаем тактирование порта A
-    rcc_periph_clock_enable(RCC_GPIOA);
-    
-    // Настраиваем TRIG как выход
-    gpio_mode_setup(TRIG_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, TRIG_PIN);
-    gpio_set_output_options(TRIG_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, TRIG_PIN);
-    
-    // Настраиваем ECHO как вход с альтернативной функцией (TIM2_CH2)
-    gpio_mode_setup(ECHO_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, ECHO_PIN);
-    gpio_set_af(ECHO_PORT, GPIO_AF1, ECHO_PIN);
-    
-    // Изначально устанавливаем TRIG в низкий уровень
-    gpio_clear(TRIG_PORT, TRIG_PIN);
 
-
-    // SPI2 на выводах PB13, PB14, PB15, PB12
-    // PB13 - SCK (вход), PB14 - MISO (выход), PB15 - MOSI (вход), PB12 - NSS (вход)
-    
-    // SCK (вход)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLDOWN, GPIO13);
-    
-    // MOSI (вход)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO15);
-    
-    // MISO (выход)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO14);
-    
-    // NSS (вход с подтяжкой)
-    gpio_mode_setup(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO12);
-    
-    // Установка альтернативной функции SPI2 (AF5)
-    gpio_set_af(GPIOB, GPIO_AF5, GPIO12 | GPIO13 | GPIO14 | GPIO15);
-
-}
 
 // Инициализация таймера TIM2 для Capture измерений
 void timer_setup(void) {
@@ -309,46 +237,4 @@ uint16_t measure_distance(void) {
 uint16_t get_distance_cm(void) 
 {
     return (uint16_t)((g_measurement.pulse_width * 17) / 1000); // Расстояние до объекта в см/мск
-}
-
-// Инициализация светодиода
-void led_setup(void) {
-    // Включаем тактирование порта D
-    rcc_periph_clock_enable(RCC_GPIOD); 
-    // Настраиваем пин как выход        
-    gpio_mode_setup(LED_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, LED_PIN); 
-    // Скорость переключения
-    gpio_set_output_options(LED_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_25MHZ, LED_PIN);
-    // Гарантируем выключенное состояние 
-    gpio_clear(LED_PORT, LED_PIN); 
-}
-
-// Индикация состояния измерения светодиодом
-void indicate_measurement(uint16_t distance) {
-    if (distance < 2  || distance > 400) {   // При ошибочных измерениях
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(60);
-        gpio_clear(LED_PORT, LED_PIN);
-    } 
-    else if (distance >= 2 && distance <= 400) { // При правильных измерениях
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(20);
-        gpio_clear(LED_PORT, LED_PIN);
-        delay_ms(20);
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(20);
-        gpio_clear(LED_PORT, LED_PIN);
-    }
-}
-
-// Задержка в микросекундах
-void delay_us(uint32_t us) {
-    for (volatile uint32_t i = 0; i < us * 84; i++); // Тактовая частота 84 МГц
-}
-
-// Задержка в миллисекундах
-void delay_ms(uint32_t ms) {
-    for (uint32_t i = 0; i < ms; i++) {
-        delay_us(1000);
-    }
 }
