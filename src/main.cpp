@@ -3,107 +3,9 @@
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/usart.h>
+#include <libopencm3/stm32/spi.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <libopencm3/stm32/spi.h>
-
-// Настройка тактирования
-void clock_setup(void)
-{
-    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
-    
-    // Включаем тактирование SPI2 и GPIO
-    rcc_periph_clock_enable(RCC_SPI2);
-    rcc_periph_clock_enable(RCC_GPIOB);
-}
-
-// Настройка SPI2 в режиме ведомого
-void spi2_slave_setup(void)
-{
-    // Сброс SPI2
-    spi_disable(SPI2);
-    
-    // Инициализация SPI в режиме ведомого
-    SPI_CR1(SPI2) = 0;
-    SPI_CR2(SPI2) = 0;
-    
-    // Настройка параметров SPI
-    spi_set_slave_mode(SPI2);                    // 8-битный режим
-    spi_set_baudrate_prescaler(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_32);
-    spi_set_clock_polarity_0(SPI2);
-    spi_set_clock_phase_0(SPI2);
-    spi_set_dff_8bit(SPI2);
-    spi_send_msb_first(SPI2);
-    
-    spi_set_full_duplex_mode(SPI2);
-
-    // Аппаратное управление NSS
-    spi_disable_software_slave_management(SPI2);
-    spi_set_nss_low(SPI2);
-    
-    // Включаем прерывания (опционально)
-    spi_enable_rx_buffer_not_empty_interrupt(SPI2);
-    spi_enable_tx_buffer_empty_interrupt(SPI2);
-    
-    // Включаем SPI
-    spi_enable(SPI2);
-}
-
-// Функция для отправки данных (когда мастер запрашивает)
-void spi2_slave_send(uint8_t data)
-{
-    // Ждем, когда буфер передачи станет пустым
-    while (!(SPI_SR(SPI2) & SPI_SR_TXE));
-    
-    // Записываем данные для отправки
-    spi_send(SPI2, data);
-}
-
-// Функция для чтения принятых данных
-uint8_t spi2_slave_receive(void)
-{
-    // Ждем, когда появятся данные в буфере приема
-    while (!(SPI_SR(SPI2) & SPI_SR_RXNE));
-    
-    // Читаем принятые данные
-    return spi_read(SPI2);
-}
-
-// Проверка активности NSS (выбор ведомого)
-bool spi2_slave_selected(void)
-{
-    return (gpio_get(GPIOB, GPIO12) == 0); // NSS активен в низком уровне
-}
-
-// Обработчик прерываний SPI2 (если используются прерывания)
-void spi2_isr(void)
-{
-    // Проверяем флаг приема данных
-    if (SPI_SR(SPI2) & SPI_SR_RXNE) {
-        uint8_t received_data = spi_read(SPI2);
-        
-        // Обработка принятых данных
-        // ...
-    }
-    
-    // Проверяем флаг готовности передачи
-    if (SPI_SR(SPI2) & SPI_SR_TXE) {
-        // Можно записать новые данные для отправки
-        // spi_send8(SPI2, next_data);
-    }
-}
-
-
-
-// Настройка NVIC для прерываний SPI2
-void nvic_setup(void)
-{
-    nvic_enable_irq(NVIC_SPI2_IRQ);
-    nvic_set_priority(NVIC_SPI2_IRQ, 1);
-}
-
-
-// ___________________
 
 
 
@@ -113,11 +15,7 @@ constexpr uint16_t TRIG_PIN = GPIO0;        // PA0 - TIM2_CH1
 constexpr uint32_t ECHO_PORT = GPIOA;
 constexpr uint16_t ECHO_PIN = GPIO1;        // PA1 - TIM2_CH2
 
-// UART
-constexpr uint32_t UART_PORT = GPIOD;
-constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX <- RX(надо)
-constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX <- TX
-constexpr uint32_t UART_DEVICE = USART3;
+
 
 // Таймер
 constexpr uint32_t MEASURE_TIMER = TIM2;
@@ -134,8 +32,6 @@ struct MeasurementState
     uint32_t pulse_width{0};        // Длительность импульса (тики)
     bool measurement_ready{false};  // Флаг готовности измерения
     uint32_t measurement_count{0};  // Флаг таймаута измерения
-
-    
 };
 
 // Глобальные переменные
@@ -145,11 +41,15 @@ static volatile MeasurementState g_measurement;
 void uart_setup(void);
 void gpio_setup(void);
 void timer_setup(void);
+
 void tim2_isr(void);
+
 void led_setup(void);
+
 void uart_send_string(const char *str);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
+
 uint16_t get_distance_cm(void);
 uint16_t measure_distance(void);
 void indicate_measurement(uint16_t distance);
@@ -158,16 +58,10 @@ void send_distance_cm(int value);
 void my_usart_print_int(uint32_t usart, int16_t value);
 
 void clock_setup(void);
-void spi2_slave_setup(void);
-void spi2_slave_send(uint8_t data);
-bool spi2_slave_selected(void);
-
-void spi2_isr(void);
 
 
+// ============== MAIN =======================
 
-
-// Основная функция программы
 int main(void) {
     // Настройка системных часов на 84 МГц от HSE 8 МГц
     clock_setup();
@@ -177,7 +71,6 @@ int main(void) {
     gpio_setup();
     timer_setup();
     led_setup();
-    spi2_slave_setup();
     
     // Переменная для хранения расстояния
     uint16_t distance_cm = 0;
@@ -202,50 +95,18 @@ int main(void) {
         
         // Отправляем расстояние по UART
         //send_distance_cm(distance_cm);
+        uart_send_string(' см ')
         my_usart_print_int(UART_DEVICE, distance_cm);
 
-        // Проверяем, выбран ли ведомый
-        if (spi2_slave_selected()) {
-            // Если есть данные для отправки - отправляем
-            spi2_slave_send('$');
-            spi2_slave_send('2');
-            spi2_slave_send('1');
-            spi2_slave_send('2');
-            spi2_slave_send(';');
-            
-
-        }
-        
-
         // Задержка между измерениями
-        delay_ms(10000);
+        delay_ms(100);
 
     }
     
     return 0;
 }
 
-void uart_setup(void) {
-    // Включаем тактирование порта D и USART3
-    rcc_periph_clock_enable(RCC_GPIOD);
-    rcc_periph_clock_enable(RCC_USART3);
-    
-    // Настраиваем пины UART
-    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, 
-                   UART_TX_PIN | UART_RX_PIN);
-    gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN | UART_RX_PIN);
-    
-    // Настраиваем USART3
-    usart_set_baudrate(UART_DEVICE, 115200);
-    usart_set_databits(UART_DEVICE, 8);
-    usart_set_stopbits(UART_DEVICE, USART_STOPBITS_1);
-    usart_set_parity(UART_DEVICE, USART_PARITY_NONE);
-    usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
-    usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
 
-    // Включаем USART3
-    usart_enable(UART_DEVICE);
-}
 //---------------------------------------------------------------------------------
 
 // Отправка строки по UART

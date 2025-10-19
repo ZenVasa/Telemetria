@@ -1,19 +1,4 @@
-#include <libopencm3/stm32/rcc.h>   // reset and clock control
-#include <libopencm3/stm32/gpio.h>  // general purpose input-output
 
-int main()
-{
-
-    rcc_periph_clock_enable(RCC_GPIOA);//Группа портов вывода D
-    gpio_mode_setup(GPIOA,GPIO_MODE_OUTPUT,GPIO_PUPD_NONE,GPIO1);
-
-    while (true)
-    {
-        gpio_toggle(GPIOA, GPIO1);
-        for ( volatile uint32_t i = 0; i< 2000000; i+=2 ); 
-    }
-}
-/*
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
@@ -175,7 +160,7 @@ void led_setup(void) {
 }
 
 //________
-
+/*
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/spi.h>
