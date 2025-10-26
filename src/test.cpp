@@ -4,6 +4,13 @@
 #include <libopencm3/stm32/spi.h>
 #include <stdbool.h>
 
+int main(void) {
+    while (1) {
+        // Бесконечный цикл
+    }
+    return 0;
+}
+/*
 // Константы для SPI
 #define SPI_DEVICE SPI2
 #define SPI_PORT GPIOB

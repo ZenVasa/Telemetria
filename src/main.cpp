@@ -22,9 +22,6 @@ struct MeasurementState
 // Глобальные переменные
 static volatile MeasurementState g_measurement;
 
-
-
-
 // ============== MAIN =======================
 
 int main(void) {
@@ -33,7 +30,8 @@ int main(void) {
     
     // Инициализация периферии
 
-    uart_setup<USART1>(GPIOA, GPIO9, GPIO10, GPIO_AF7);  // USART1 на PA9 (TX), PA10 (RX)
+    //uart_setup<USART1>(GPIOA, GPIO9, GPIO10, GPIO_AF7);  // USART1 на PA9 (TX), PA10 (RX)
+    uart_setup<USART3>(GPIOD, GPIO8, GPIO9, GPIO_AF7);  // USART1 на PA9 (TX), PA10 (RX)
 
     gpio_setup();
     timer_setup();
@@ -55,12 +53,12 @@ int main(void) {
         distance_cm = measure_distance();
         
         // Индикация результата на светодиодах
-        indicate_measurement(distance_cm);
+        //indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
         //send_distance_cm(distance_cm);
         uart_send_string("См");
-        my_usart_print_int(USART1, distance_cm);
+        my_usart_print_int(USART3, distance_cm);
 
         // Задержка между измерениями
         delay_ms(100);
@@ -75,7 +73,7 @@ int main(void) {
 // Отправка строки по UART
 void uart_send_string(const char *str) {
     while (*str) {
-        usart_send_blocking(USART1, *str);
+        usart_send_blocking(USART3, *str);
         str++;
     }
 }
@@ -89,7 +87,7 @@ void send_distance_cm(int value) {
     
     // Отправляем строку
     for (char *p = buffer; *p; p++) {
-        usart_send_blocking(USART1, *p);
+        usart_send_blocking(USART3, *p);
     }
 }
 
@@ -186,7 +184,7 @@ void tim2_isr(void) {
     }
 }
 
-// Функция измерения расстояния с таймаутом
+// Функция измерения расстояния
 uint16_t measure_distance(void) {
 
     constexpr uint32_t MEASUREMENT_TIMEOUT_MS = 100; // Таймаут 100 мс
@@ -220,17 +218,17 @@ uint16_t measure_distance(void) {
         if (g_measurement.measurement_ready) // Ожидаем true в прерывании таймера
         {
             uint16_t distance = get_distance_cm();
-            
-        // Проверяем диапазон 2-400 см
-        if (distance >= 2 && distance <= 400)
-        {
-            return distance; // Возвращаем валидное расстояние
-        }
 
+            // Проверяем диапазон 2-400 см
+            if (distance >= 2 && distance <= 400)
+            {
+                return distance; // Возвращаем валидное расстояние
+            }
         }
+    }
     // Таймаут срабатывает если за 100 мс не получен ECHO-импульс
     return 0;
-    }
+
 }
 
 // Вычисление расстояния в сантиметрах

@@ -1,60 +1,10 @@
 #include "../inc/setup.hpp"
 
-
-
-
 // Настройка тактирования
 void clock_setup(void)
 {
     rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
 }
-
-
-// Универсальный шаблон UART
-
-template<uint32_t DEVICE>
-void uart_setup(uint32_t port, uint16_t tx_pin, uint16_t rx_pin, uint32_t gpio_af) {
-
-    // Определения тактирования
-    uint32_t port_rcc = 0;
-    uint32_t device_rcc = 0;
-    
-    // Определяем тактирование порта
-    switch(port) {
-        case GPIOA: port_rcc = RCC_GPIOA; break;
-        case GPIOB: port_rcc = RCC_GPIOB; break;
-        case GPIOC: port_rcc = RCC_GPIOC; break;
-        case GPIOD: port_rcc = RCC_GPIOD; break;
-        case GPIOE: port_rcc = RCC_GPIOE; break;
-        case GPIOF: port_rcc = RCC_GPIOF; break;
-    }
-    // Определяем тактирование устройства
-    switch(DEVICE) {
-        case USART1: device_rcc = RCC_USART1; break;
-        case USART2: device_rcc = RCC_USART2; break;
-        case USART3: device_rcc = RCC_USART3; break;
-        case UART4:  device_rcc = RCC_UART4; break;
-        case UART5:  device_rcc = RCC_UART5; break;
-        case USART6: device_rcc = RCC_USART6; break;
-    }
-
-    rcc_periph_clock_enable(port_rcc);
-    rcc_periph_clock_enable(device_rcc);
-    
-    gpio_mode_setup(port, GPIO_MODE_AF, GPIO_PUPD_NONE, tx_pin | rx_pin);
-    gpio_set_af(port, gpio_af, tx_pin | rx_pin);
-    
-    usart_set_baudrate(DEVICE, 115200);
-    usart_set_databits(DEVICE, 8);
-    usart_set_stopbits(DEVICE, USART_STOPBITS_1);
-    usart_set_parity(DEVICE, USART_PARITY_NONE);
-    usart_set_flow_control(DEVICE, USART_FLOWCONTROL_NONE);
-    usart_set_mode(DEVICE, USART_MODE_TX_RX);
-    usart_enable(DEVICE);
-}
-
-
-
 
 // Пины и периферия
 constexpr uint32_t TRIG_PORT = GPIOA;
@@ -93,24 +43,23 @@ void led_setup(void) {
     // Гарантируем выключенное состояние 
     gpio_clear(LED_PORT, LED_PIN); 
 }
-
+/*
 // Индикация состояния измерения светодиодом
 void indicate_measurement(uint16_t distance) {
     if (distance < 2  || distance > 400) {   // При ошибочных измерениях
         gpio_set(LED_PORT, LED_PIN);
-        delay_ms(60);
+        delay_ms(40);
         gpio_clear(LED_PORT, LED_PIN);
+        delay_ms(40);
     } 
     else if (distance >= 2 && distance <= 400) { // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
         delay_ms(20);
         gpio_clear(LED_PORT, LED_PIN);
         delay_ms(20);
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(20);
-        gpio_clear(LED_PORT, LED_PIN);
+
     }
-}
+}*/
 
 // Задержка в микросекундах
 void delay_us(uint32_t us) {
