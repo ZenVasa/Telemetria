@@ -25,15 +25,13 @@ static volatile MeasurementState g_measurement;
 // ============== MAIN =======================
 
 int main(void) {
-    // Настройка системных часов на 84 МГц от HSE 8 МГц
-    clock_setup();
-    
+    // Настройка системных часов на 164 МГц от HSE 8 МГц
+    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
+
     // Инициализация периферии
 
-    //uart_setup<USART1>(GPIOA, GPIO9, GPIO10, GPIO_AF7);  // USART1 на PA9 (TX), PA10 (RX)
-    uart_setup<USART3>(GPIOD, GPIO8, GPIO9, GPIO_AF7);  // USART1 на PA9 (TX), PA10 (RX)
-
     gpio_setup();
+    USART1_setup();
     timer_setup();
     led_setup();
     
@@ -53,15 +51,16 @@ int main(void) {
         distance_cm = measure_distance();
         
         // Индикация результата на светодиодах
-        //indicate_measurement(distance_cm);
+        indicate_measurement(distance_cm);
         
         // Отправляем расстояние по UART
         //send_distance_cm(distance_cm);
         uart_send_string("См");
-        my_usart_print_int(USART3, distance_cm);
+        my_usart_print_int(USART1, distance_cm);
+        send_distance_cm(distance_cm);
 
         // Задержка между измерениями
-        delay_ms(100);
+        delay_ms(50);
 
     }
     
@@ -73,7 +72,7 @@ int main(void) {
 // Отправка строки по UART
 void uart_send_string(const char *str) {
     while (*str) {
-        usart_send_blocking(USART3, *str);
+        usart_send_blocking(USART1, *str);
         str++;
     }
 }
@@ -87,7 +86,7 @@ void send_distance_cm(int value) {
     
     // Отправляем строку
     for (char *p = buffer; *p; p++) {
-        usart_send_blocking(USART3, *p);
+        usart_send_blocking(USART1, *p);
     }
 }
 
@@ -129,7 +128,7 @@ void timer_setup(void) {
     
     // Настройка предделителя для получения 1 МГц
     // 84 МГц / 84 = 1 МГц (1 тик = 1 микросекунда)
-    timer_set_prescaler(MEASURE_TIMER, 84 - 1);
+    timer_set_prescaler(MEASURE_TIMER, 168 - 1);
 
     // Установка максимального периода для 32-битного таймера
     // 0xFFFFFFFF = 4,294,967,295 тиков ≈ 4295 секунд при 1 МГц
@@ -220,10 +219,10 @@ uint16_t measure_distance(void) {
             uint16_t distance = get_distance_cm();
 
             // Проверяем диапазон 2-400 см
-            if (distance >= 2 && distance <= 400)
-            {
+            //if (distance >= 2 && distance <= 400)
+            //{
                 return distance; // Возвращаем валидное расстояние
-            }
+            //}
         }
     }
     // Таймаут срабатывает если за 100 мс не получен ECHO-импульс
