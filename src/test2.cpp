@@ -42,7 +42,7 @@ void send_distance_cm(uint32_t distance_cm);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 void led_setup(void);
-uint32_t get_distance_cm(void);
+//uint32_t get_distance_cm(void);
 uint32_t measure_distance(void);
 void my_usart_print_int(uint32_t usart, int32_t value);
 
@@ -124,16 +124,13 @@ void my_usart_print_int(uint32_t usart, int32_t value) {
     for (i = nr_digits-1; i >= 0; i--) {
         usart_send_blocking(usart, buffer[i]);
     }
-
-    usart_send_blocking(usart, '\r');
-    usart_send_blocking(usart, '\n');
 }
 
 
 void send_distance_cm(uint32_t distance_cm) {
     uart_send_string("Расстояние: ");
     my_usart_print_int(USART3, distance_cm);
-    uart_send_string(" см\n");
+    uart_send_string(" См\r\n");
     
     if (distance_cm >= 2 && distance_cm <= 400) { // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
@@ -168,7 +165,7 @@ void timer_setup(void) {
     timer_disable_counter(TIM2);
     
     // Настройка таймера на 1 МГц
-    timer_set_prescaler(TIM2, 168 - 1); // 168 МГц / 168 = 1 МГц
+    timer_set_prescaler(TIM2, 84 - 1); // 1 МГц
     timer_set_period(TIM2, 0xFFFFFFFF);
     timer_continuous_mode(TIM2);
     
@@ -197,7 +194,7 @@ void tim2_isr(void) {
         
         const uint32_t capture_value = TIM_CCR4(TIM2);
         
-        if (gpio_get(ECHO_PORT, ECHO_PIN)) { //
+        if (gpio_get(ECHO_PORT, ECHO_PIN)) { 
             // Передний фронт - начало импульса
             pulse_start = capture_value;
         } 
@@ -217,12 +214,11 @@ void tim2_isr(void) {
         }
     }
 }
-
-
+/*
 uint32_t get_distance_cm(void) {
-    return (pulse_width*10) / 289; //578
+    return (pulse_width*10) / 578;
 }
-
+*/
 uint32_t measure_distance(void) {
     measurement_ready = false;
     pulse_start = 0;
@@ -239,7 +235,7 @@ uint32_t measure_distance(void) {
     // Ожидание измерения
     for (volatile uint32_t i = 0; i < 1000000; i++) {
         if (measurement_ready) {
-            uint32_t distance = get_distance_cm();
+            uint32_t distance = (pulse_width*10) / 578; // Расёт расстояния в сантиметра 
             return distance;
         }
     }
