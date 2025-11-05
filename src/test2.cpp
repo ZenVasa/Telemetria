@@ -6,6 +6,8 @@
 #include <libopencm3/stm32/usart.h>
 #include <stdbool.h>
 
+//sudo chmod 666 /dev/ttyUSB0
+
 // Определения пинов
 #define TRIG_PORT GPIOA
 #define TRIG_PIN  GPIO5    // PA5 - TRIG
@@ -16,14 +18,23 @@
 #define MEASURE_TIMER TIM2
 
 // LED
-constexpr uint32_t LED_PORT = GPIOD;
-constexpr uint16_t LED_PIN = GPIO14;
+//constexpr uint32_t LED_PORT = GPIOD;
+//constexpr uint16_t LED_PIN = GPIO14;
+
+constexpr uint32_t LED_PORT = GPIOA;
+constexpr uint16_t LED_PIN = GPIO1;
 
 // UART
-constexpr uint32_t UART_PORT = GPIOD;
-constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX <- RX(надо)
-constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX <- TX
-constexpr uint32_t UART_DEVICE = USART3;
+//constexpr uint32_t UART_PORT = GPIOD;
+//constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX <- RX(надо)
+//constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX <- TX
+//constexpr uint32_t UART_DEVICE = USART3;
+
+// UART
+constexpr uint32_t UART_PORT = GPIOA;
+constexpr uint16_t UART_TX_PIN = GPIO9;     // PD8 - TX <- RX(надо)
+constexpr uint16_t UART_RX_PIN = GPIO10;     // PD9 - RX <- TX
+constexpr uint32_t UART_DEVICE = USART1;
 
 // Глобальные переменные
 volatile uint32_t pulse_start = 0;
@@ -42,30 +53,37 @@ void send_distance_cm(uint32_t distance_cm);
 void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 void led_setup(void);
-//uint32_t get_distance_cm(void);
+void clock_setup(void);
 uint32_t measure_distance(void);
 void my_usart_print_int(uint32_t usart, int32_t value);
 
 
+void clock_setup(void){
+    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
+
+    // Включаем тактирование для GPIOA, GPIOB и USART1, USART2
+    rcc_periph_clock_enable(RCC_GPIOA);
+    rcc_periph_clock_enable(RCC_GPIOD);
+    rcc_periph_clock_enable(RCC_TIM2);
+    rcc_periph_clock_enable(RCC_USART1);
+    //rcc_periph_clock_enable(RCC_USART3);
+
+}
+
 // Основная функция
 int main(void) {
-    rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
+    clock_setup();
     
-    uart_setup();
     gpio_setup();
     timer_setup();
-
-    delay_ms(1000);
-    gpio_set(LED_PORT, LED_PIN);
-    delay_ms(50);
-    gpio_clear(LED_PORT, LED_PIN);
+    uart_setup();
     
     uart_send_string(" Запуск HC-SR04 \r\n");
     
     while (true) {
         uint32_t distance = measure_distance();
         send_distance_cm(distance); // Отправка расстояние в UART3 и моргание светодиодом
-        delay_ms(50);
+        delay_ms(30);
     }
     
     return 0;
@@ -73,16 +91,13 @@ int main(void) {
 
 
 void uart_setup(void) {
-    // Включаем тактирование порта D и USART3
-    rcc_periph_clock_enable(RCC_GPIOD);
-    rcc_periph_clock_enable(RCC_USART3);
     
     // Настраиваем пины UART
     gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, 
                    UART_TX_PIN | UART_RX_PIN);
     gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN | UART_RX_PIN);
     
-    // Настраиваем USART3
+    // Настраиваем UART
     usart_set_baudrate(UART_DEVICE, 115200);
     usart_set_databits(UART_DEVICE, 8);
     usart_set_stopbits(UART_DEVICE, USART_STOPBITS_1);
@@ -90,13 +105,13 @@ void uart_setup(void) {
     usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
     usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
 
-    // Включаем USART3
+    // Включаем UART
     usart_enable(UART_DEVICE);
 }
 
 void uart_send_string(const char *str) {
     while (*str) {
-        usart_send_blocking(USART3, *str);
+        usart_send_blocking(USART1, *str);
         str++;
     }
 }
@@ -129,12 +144,12 @@ void my_usart_print_int(uint32_t usart, int32_t value) {
 
 void send_distance_cm(uint32_t distance_cm) {
     uart_send_string("Расстояние: ");
-    my_usart_print_int(USART3, distance_cm);
-    uart_send_string(" См\r\n");
+    my_usart_print_int(USART1, distance_cm);
+    uart_send_string(" мм\r\n");
     
-    if (distance_cm >= 2 && distance_cm <= 400) { // При правильных измерениях
+    if (distance_cm >= 20 && distance_cm <= 4000) { // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
-        delay_ms(50);
+        delay_ms(30);
         gpio_clear(LED_PORT, LED_PIN);
     }
 }
@@ -159,11 +174,9 @@ void gpio_setup(void) {
 }
 
 void timer_setup(void) {
-    rcc_periph_clock_enable(RCC_TIM2);
-    
     // Останавливаем таймер перед настройкой
     timer_disable_counter(TIM2);
-    
+
     // Настройка таймера на 1 МГц
     timer_set_prescaler(TIM2, 84 - 1); // 1 МГц
     timer_set_period(TIM2, 0xFFFFFFFF);
@@ -182,7 +195,7 @@ void timer_setup(void) {
     timer_enable_irq(TIM2, TIM_DIER_CC4IE);
     nvic_enable_irq(NVIC_TIM2_IRQ);
     nvic_set_priority(NVIC_TIM2_IRQ, 0);
-    
+
     // Запускаем таймер
     timer_enable_counter(TIM2);
 
@@ -192,8 +205,7 @@ void tim2_isr(void) {
     if (timer_get_flag(TIM2, TIM_SR_CC4IF)) {
         timer_clear_flag(TIM2, TIM_SR_CC4IF);
         
-        const uint32_t capture_value = TIM_CCR4(TIM2);
-        
+        uint32_t capture_value = TIM_CCR4(TIM2);
         if (gpio_get(ECHO_PORT, ECHO_PIN)) { 
             // Передний фронт - начало импульса
             pulse_start = capture_value;
@@ -208,17 +220,12 @@ void tim2_isr(void) {
             } else {
                 pulse_width = (0xFFFFFFFF - pulse_start) + pulse_end + 1;
             }
-            
             measurement_ready = true;
             measurement_count++;
         }
     }
 }
-/*
-uint32_t get_distance_cm(void) {
-    return (pulse_width*10) / 578;
-}
-*/
+
 uint32_t measure_distance(void) {
     measurement_ready = false;
     pulse_start = 0;
@@ -233,13 +240,12 @@ uint32_t measure_distance(void) {
     gpio_clear(TRIG_PORT, TRIG_PIN);
     
     // Ожидание измерения
-    for (volatile uint32_t i = 0; i < 1000000; i++) {
+    for (volatile uint32_t i = 0; i < 840000; i++) { 
         if (measurement_ready) {
-            uint32_t distance = (pulse_width*10) / 578; // Расёт расстояния в сантиметра 
+            uint32_t distance = (pulse_width*100) / 578; // Расёт расстояния ( *10-см, *100-мм )
             return distance;
         }
     }
-    
     return 0; // Таймаут
 }
 
