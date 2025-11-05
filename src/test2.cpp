@@ -39,7 +39,7 @@ void delay_us(uint32_t us);
 void delay_ms(uint32_t ms);
 uint32_t get_distance_cm(void);
 uint32_t measure_distance(void);
-void my_usart_print_int(uint32_t value);
+void my_usart_print_int(uint32_t usart, int32_t value);
 
 // Основная функция
 int main(void) {
@@ -83,24 +83,6 @@ void uart_setup(void) {
     usart_enable(UART_DEVICE);
 }
 
-/*
-void uart_setup(void) {
-    rcc_periph_clock_enable(RCC_GPIOA);
-    rcc_periph_clock_enable(RCC_USART1);
-    
-    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO9 | GPIO10);
-    gpio_set_af(GPIOA, GPIO_AF7, GPIO9 | GPIO10);
-    
-    usart_set_baudrate(USART1, 115200);
-    usart_set_databits(USART1, 8);
-    usart_set_stopbits(USART1, USART_STOPBITS_1);
-    usart_set_parity(USART1, USART_PARITY_NONE);
-    usart_set_flow_control(USART1, USART_FLOWCONTROL_NONE);
-    usart_set_mode(USART1, USART_MODE_TX_RX);
-    usart_enable(USART1);
-}
-*/
-
 void uart_send_string(const char *str) {
     while (*str) {
         usart_send_blocking(USART3, *str);
@@ -108,28 +90,39 @@ void uart_send_string(const char *str) {
     }
 }
 
-void my_usart_print_int(uint32_t value) {
-    char buffer[10];
-    char* ptr = buffer + 9;
-    *ptr = '\0';
-    
+void my_usart_print_int(uint32_t usart, int32_t value) {
+    int8_t i;
+    int8_t nr_digits = 0;
+    char buffer[25];
+
+    if (value < 0) {
+        usart_send_blocking(usart, '-');
+        value = value * -1;
+    }
+
     if (value == 0) {
-        usart_send_blocking(USART3, '0');
-    } else {
-        do {
-            *--ptr = '0' + (value % 10);
-            value /= 10;
-        } while (value > 0);
+        usart_send_blocking(usart, '0');
+        return;
     }
-    
-    while (*ptr) {
-        usart_send_blocking(USART3, *ptr++);
+
+    while (value > 0) {
+        buffer[nr_digits++] = "0123456789"[value % 10];
+        value /= 10;
     }
+
+    for (i = nr_digits-1; i >= 0; i--) {
+        usart_send_blocking(usart, buffer[i]);
+    }
+
+    usart_send_blocking(usart, '\r');
+    usart_send_blocking(usart, '\n');
 }
+
+
 
 void send_distance_cm(uint32_t distance_cm) {
     uart_send_string("Расстояние: ");
-    my_usart_print_int(distance_cm);
+    my_usart_print_int(USART3, distance_cm);
     uart_send_string(" см\r\n");
 }
 
@@ -156,17 +149,17 @@ void timer_setup(void) {
     timer_set_period(TIM2, 0xFFFFFFFF);
     timer_continuous_mode(TIM2);
     
-    // Настройка Input Capture для канала 3
-    timer_ic_set_input(TIM2, TIM_IC3, TIM_IC_IN_TI3);
-    timer_ic_set_filter(MEASURE_TIMER, TIM_IC2, TIM_IC_OFF);
-    timer_ic_set_prescaler(MEASURE_TIMER, TIM_IC2, TIM_IC_PSC_OFF);
+    // Настройка Input Capture для канала 4
+    timer_ic_set_input(TIM2, TIM_IC4, TIM_IC_IN_TI4);
+    timer_ic_set_filter(MEASURE_TIMER, TIM_IC4, TIM_IC_OFF);
+    timer_ic_set_prescaler(MEASURE_TIMER, TIM_IC4, TIM_IC_PSC_OFF);
     // ЗАХВАТ ПО ОБОИМ ФРОНТАМ 
-    timer_ic_set_polarity(TIM2, TIM_IC3, TIM_IC_BOTH);
+    timer_ic_set_polarity(TIM2, TIM_IC4, TIM_IC_BOTH);
     
-    timer_ic_enable(TIM2, TIM_IC3); // Включение канала
+    timer_ic_enable(TIM2, TIM_IC4); // Включение канала
     
-    // Включаем прерывание
-    timer_enable_irq(TIM2, TIM_DIER_CC3IE);
+    // Включаем прерывание по захвату канала 4
+    timer_enable_irq(TIM2, TIM_DIER_CC4IE);
     nvic_enable_irq(NVIC_TIM2_IRQ);
     nvic_set_priority(NVIC_TIM2_IRQ, 0);
     
@@ -174,17 +167,18 @@ void timer_setup(void) {
     timer_enable_counter(TIM2);
 
 }
-// Обработчик прерывания TIM2 - ваш вариант
+// Обработчик прерывания TIM2
 void tim2_isr(void) {
-    if (timer_get_flag(TIM2, TIM_SR_CC3IF)) {
-        timer_clear_flag(TIM2, TIM_SR_CC3IF);
+    if (timer_get_flag(TIM2, TIM_SR_CC4IF)) {
+        timer_clear_flag(TIM2, TIM_SR_CC4IF);
         
-        const uint32_t capture_value = TIM_CCR3(TIM2);
+        const uint32_t capture_value = TIM_CCR4(TIM2);
         
-        if (gpio_get(ECHO_PORT, ECHO_PIN)) {
+        if (gpio_get(ECHO_PORT, ECHO_PIN)) { //
             // Передний фронт - начало импульса
             pulse_start = capture_value;
-        } else {
+        } 
+        else {
             // Задний фронт - конец импульса
             pulse_end = capture_value;
             
@@ -203,7 +197,7 @@ void tim2_isr(void) {
 
 
 uint32_t get_distance_cm(void) {
-    return pulse_width / 58;
+    return pulse_width / 58.0;
 }
 
 uint32_t measure_distance(void) {
@@ -224,7 +218,7 @@ uint32_t measure_distance(void) {
         if (measurement_ready) {
             uint32_t distance = get_distance_cm();
             //if (distance >= 2 && distance <= 400) {
-                return distance;
+            return distance;
             //}
             //return 0;
         }

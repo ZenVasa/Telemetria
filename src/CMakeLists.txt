@@ -5,8 +5,8 @@ add_executable(${CMAKE_PROJECT_NAME}
     #main.cpp    
     #setup.cpp    
     
-    test.cpp
-    #test2.cpp
+    #test.cpp
+    test2.cpp
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME}
