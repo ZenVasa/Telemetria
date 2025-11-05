@@ -12,8 +12,14 @@
 #define ECHO_PORT GPIOA  
 #define ECHO_PIN  GPIO3    // PA3 - TIM2_CH3
 
-#define UART_DEVICE USART1
+//#define UART_DEVICE USART1
 #define MEASURE_TIMER TIM2
+
+// UART
+constexpr uint32_t UART_PORT = GPIOD;
+constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX <- RX(надо)
+constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX <- TX
+constexpr uint32_t UART_DEVICE = USART3;
 
 // Глобальные переменные
 volatile uint32_t pulse_start = 0;
@@ -54,6 +60,30 @@ int main(void) {
     return 0;
 }
 
+
+void uart_setup(void) {
+    // Включаем тактирование порта D и USART3
+    rcc_periph_clock_enable(RCC_GPIOD);
+    rcc_periph_clock_enable(RCC_USART3);
+    
+    // Настраиваем пины UART
+    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, 
+                   UART_TX_PIN | UART_RX_PIN);
+    gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN | UART_RX_PIN);
+    
+    // Настраиваем USART3
+    usart_set_baudrate(UART_DEVICE, 115200);
+    usart_set_databits(UART_DEVICE, 8);
+    usart_set_stopbits(UART_DEVICE, USART_STOPBITS_1);
+    usart_set_parity(UART_DEVICE, USART_PARITY_NONE);
+    usart_set_flow_control(UART_DEVICE, USART_FLOWCONTROL_NONE);
+    usart_set_mode(UART_DEVICE, USART_MODE_TX_RX);
+
+    // Включаем USART3
+    usart_enable(UART_DEVICE);
+}
+
+/*
 void uart_setup(void) {
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_USART1);
@@ -69,10 +99,11 @@ void uart_setup(void) {
     usart_set_mode(USART1, USART_MODE_TX_RX);
     usart_enable(USART1);
 }
+*/
 
 void uart_send_string(const char *str) {
     while (*str) {
-        usart_send_blocking(USART1, *str);
+        usart_send_blocking(USART3, *str);
         str++;
     }
 }
@@ -83,7 +114,7 @@ void my_usart_print_int(uint32_t value) {
     *ptr = '\0';
     
     if (value == 0) {
-        usart_send_blocking(USART1, '0');
+        usart_send_blocking(USART3, '0');
     } else {
         do {
             *--ptr = '0' + (value % 10);
@@ -92,7 +123,7 @@ void my_usart_print_int(uint32_t value) {
     }
     
     while (*ptr) {
-        usart_send_blocking(USART1, *ptr++);
+        usart_send_blocking(USART3, *ptr++);
     }
 }
 
@@ -127,7 +158,8 @@ void timer_setup(void) {
     
     // Настройка Input Capture для канала 3
     timer_ic_set_input(TIM2, TIM_IC3, TIM_IC_IN_TI3);
-    
+    timer_ic_set_filter(MEASURE_TIMER, TIM_IC2, TIM_IC_OFF);
+    timer_ic_set_prescaler(MEASURE_TIMER, TIM_IC2, TIM_IC_PSC_OFF);
     // ЗАХВАТ ПО ОБОИМ ФРОНТАМ 
     timer_ic_set_polarity(TIM2, TIM_IC3, TIM_IC_BOTH);
     
@@ -136,9 +168,11 @@ void timer_setup(void) {
     // Включаем прерывание
     timer_enable_irq(TIM2, TIM_DIER_CC3IE);
     nvic_enable_irq(NVIC_TIM2_IRQ);
+    nvic_set_priority(NVIC_TIM2_IRQ, 0);
     
     // Запускаем таймер
     timer_enable_counter(TIM2);
+
 }
 // Обработчик прерывания TIM2 - ваш вариант
 void tim2_isr(void) {
@@ -189,10 +223,10 @@ uint32_t measure_distance(void) {
     for (volatile uint32_t i = 0; i < 1000000; i++) {
         if (measurement_ready) {
             uint32_t distance = get_distance_cm();
-            if (distance >= 2 && distance <= 400) {
+            //if (distance >= 2 && distance <= 400) {
                 return distance;
-            }
-            return 0;
+            //}
+            //return 0;
         }
     }
     
@@ -208,6 +242,9 @@ void delay_ms(uint32_t ms) {
         delay_us(1000);
     }
 }
+
+
+
 
 /*
 void tim2_isr(void) {
@@ -366,8 +403,8 @@ int main(void) {
 
 
 
-
 /*
+
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/usart.h>
@@ -378,6 +415,8 @@ void uart_send_string(const char *str) {
         str++;
     }
 }
+
+
 
 int main(void) {
     // Тактирование
