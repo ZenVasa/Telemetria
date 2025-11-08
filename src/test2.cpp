@@ -6,6 +6,14 @@
 #include <libopencm3/stm32/usart.h>
 #include <stdbool.h>
 
+// Константы для SPI
+constexpr uint32_t SPI_DEVICE SPI2
+constexpr uint32_t SPI_PORT GPIOB
+constexpr uint16_t SPI_SCK_PIN GPIO13
+constexpr uint16_t SPI_MISO_PIN GPIO14
+constexpr uint16_t SPI_MOSI_PIN GPIO15
+constexpr uint16_t SPI_NSS_PIN GPIO12
+
 // Таймер
 constexpr uint32_t MEASURE_TIMER = TIM2;
 
@@ -45,36 +53,78 @@ void led_setup(void);
 void clock_setup(void);
 uint32_t measure_distance(void);
 void my_usart_print_int(uint32_t usart, int32_t value);
+// SPI
+void spi2_slave_setup(void);
+void spi2_slave_send(uint8_t data);
+bool spi2_slave_selected(void);
+
+void spi2_send_distance(uint32_t distance);  
 
 
 void clock_setup(void){
     rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
 
-    // Включаем тактирование для GPIOA, GPIOD, TIM2 и USART
+    // Включаем тактирование для GPIOA, GPIOB, GPIOD, TIM2 и USART
     rcc_periph_clock_enable(RCC_GPIOA);
+    rcc_periph_clock_enable(RCC_GPIOB);
     rcc_periph_clock_enable(RCC_GPIOD);
     rcc_periph_clock_enable(RCC_TIM2);
-    rcc_periph_clock_enable(RCC_USART1);
-    //rcc_periph_clock_enable(RCC_USART3);
+    rcc_periph_clock_enable(RCC_SPI2);
+    rcc_periph_clock_enable(RCC_USART1); // или RCC_USART3
+
 }
 
 // Основная функция
 int main(void) {
-    clock_setup();
+    clock_setup(); 
     
     gpio_setup();
+    spi2_slave_setup();
     timer_setup();
     uart_setup();
     
     uart_send_string(" Запуск HC-SR04 \r\n");
     
     while (true) {
-        uint32_t distance = measure_distance();
-        send_distance_cm(distance); // Отправка расстояние в UART3 и моргание светодиодом
+        uint32_t distance = measure_distance(); // Замер и расчёт расстояния
+        send_distance_cm(distance);             // Отправка расстояние в UART3 и моргание светодиодом
+
+        if (spi2_slave_selected()) {
+            spi2_send_distance(distance); // Отправляем расстояние по SPI
+        }
+
         delay_ms(30);
     }
     
     return 0;
+}
+
+// Новая функция для отправки расстояния по SPI
+void spi2_send_distance(uint32_t distance) {
+    char buffer[10];
+    int length = 0;
+    
+    // Начинаем с символа '$'
+    spi2_slave_send('$');
+    
+    // Преобразуем число в строку
+    if (distance == 0) {
+        spi2_slave_send('0');
+    } else {
+        // Извлекаем цифры и сохраняем в буфер в обратном порядке
+        while (distance > 0) {
+            buffer[length++] = '0' + (distance % 10);
+            distance /= 10;
+        }
+        
+        // Отправляем цифры в правильном порядке (от старшей к младшей)
+        for (int i = length - 1; i >= 0; i--) {
+            spi2_slave_send(buffer[i]);
+        }
+    }
+    
+    // Завершаем символом ';'
+    spi2_slave_send(';');
 }
 
 
@@ -109,6 +159,40 @@ void gpio_setup(void) {
     // Гарантируем выключенное состояние 
     gpio_clear(LED_PORT, LED_PIN); 
 
+
+    // SPI2 на выводах PB13(SCK), PB14(MISO), PB15(MOSI), PB12(NSS)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_SCK_PIN);   // SCK (вход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MOSI_PIN);  // MOSI (вход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MISO_PIN);  // MISO (выход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, SPI_NSS_PIN); // NSS (вход с подтяжкой к VCC)
+    
+    // Установка альтернативной функции SPI2 (AF5)
+    gpio_set_af(SPI_PORT, GPIO_AF5, SPI_SCK_PIN | SPI_MISO_PIN | SPI_MOSI_PIN | SPI_NSS_PIN);
+
+}
+
+// Настройка SPI2 в режиме ведомого
+void spi2_slave_setup(void)
+{
+    // Выключаем SPI перед настройкой
+    spi_disable(SPI_DEVICE);
+    
+    // Настройка режима ведомого
+    spi_set_slave_mode(SPI_DEVICE);
+
+    // Настройка формата данных
+    spi_set_baudrate_prescaler(SPI2, SPI_CR1_BAUDRATE_FPCLK_DIV_256);
+    spi_set_clock_polarity_0(SPI_DEVICE);                               // CPOL = 0
+    spi_set_clock_phase_0(SPI_DEVICE);                                  // CPHA = 0
+    spi_set_full_duplex_mode(SPI_DEVICE);                               // Полнодуплексный режим
+    spi_set_dff_8bit(SPI_DEVICE);                                       // 8 бит данных
+    spi_send_msb_first(SPI_DEVICE);                                     // Старший бит первый
+    
+    // Аппаратное управление NSS
+    spi_disable_software_slave_management(SPI_DEVICE);
+    
+    // Включаем SPI
+    spi_enable(SPI_DEVICE);
 }
 
 void timer_setup(void) {
@@ -182,15 +266,49 @@ uint32_t measure_distance(void) {
     // Ожидание измерения
     for (volatile uint32_t i = 0; i < 840000; i++) { 
         if (measurement_ready) {
-            uint32_t distance = (pulse_width*100) / 578; // Расёт расстояния ( *10-см, *100-мм )
+            uint32_t distance = (pulse_width*10) / 578; // Расёт расстояния ( *10-см, *100-мм )
             return distance;
         }
     }
     return 0; // Таймаут
 }
 
+// Всё для SPI
+
+// Функция для отправки данных
+void spi2_slave_send(uint8_t data)
+{
+    // Ждем, когда буфер передачи станет пустым
+    while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
+        // Ожидание готовности
+    }
+    
+    // Записываем данные для отправки
+    //SPI_DR(SPI_DEVICE) = data;
+    spi_send(SPI2, data);
+}
+
+// Проверка активности NSS (выбор ведомого)
+bool spi2_slave_selected(void)
+{
+    // NSS активен в низком уровне
+    return (gpio_get(SPI_PORT, SPI_NSS_PIN) == 0);
+}
 
 // Для отправки в UART
+
+void send_distance_cm(uint32_t distance_cm) {
+    uart_send_string("Расстояние: ");
+    my_usart_print_int(USART1, distance_cm);
+    uart_send_string(" мм\r\n");
+    
+    if (distance_cm >= 2 && distance_cm <= 400) { // При правильных измерениях
+        gpio_set(LED_PORT, LED_PIN);
+        delay_ms(30);
+        gpio_clear(LED_PORT, LED_PIN);
+    }
+}
+
 void uart_send_string(const char *str) {
     while (*str) {
         usart_send_blocking(USART1, *str);
@@ -220,18 +338,6 @@ void my_usart_print_int(uint32_t usart, int32_t value) {
 
     for (i = nr_digits-1; i >= 0; i--) {
         usart_send_blocking(usart, buffer[i]);
-    }
-}
-
-void send_distance_cm(uint32_t distance_cm) {
-    uart_send_string("Расстояние: ");
-    my_usart_print_int(USART1, distance_cm);
-    uart_send_string(" мм\r\n");
-    
-    if (distance_cm >= 20 && distance_cm <= 4000) { // При правильных измерениях
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(30);
-        gpio_clear(LED_PORT, LED_PIN);
     }
 }
 
