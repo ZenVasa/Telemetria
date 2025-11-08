@@ -6,35 +6,24 @@
 #include <libopencm3/stm32/usart.h>
 #include <stdbool.h>
 
-//sudo chmod 666 /dev/ttyUSB0
+// Таймер
+constexpr uint32_t MEASURE_TIMER = TIM2;
 
-// Определения пинов
-#define TRIG_PORT GPIOA
-#define TRIG_PIN  GPIO5    // PA5 - TRIG
-#define ECHO_PORT GPIOA  
-#define ECHO_PIN  GPIO3    // PA3 - TIM2_CH3
-
-//#define UART_DEVICE USART1
-#define MEASURE_TIMER TIM2
+// Пины и периферия
+constexpr uint32_t TRIG_PORT = GPIOA;
+constexpr uint16_t TRIG_PIN = GPIO5;        // PA5 - TIM2_CH1 - TRIG
+constexpr uint32_t ECHO_PORT = GPIOA;  
+constexpr uint16_t ECHO_PIN = GPIO3;        // PA3 - TIM2_CH4 - ECHO
 
 // LED
-//constexpr uint32_t LED_PORT = GPIOD;
-//constexpr uint16_t LED_PIN = GPIO14;
-
-constexpr uint32_t LED_PORT = GPIOA;
-constexpr uint16_t LED_PIN = GPIO1;
+constexpr uint32_t LED_PORT = GPIOA; // GPIOA - чёрная, GPIOD - зелёная
+constexpr uint16_t LED_PIN = GPIO1;  // GPIO1           GPIO14
 
 // UART
-//constexpr uint32_t UART_PORT = GPIOD;
-//constexpr uint16_t UART_TX_PIN = GPIO8;     // PD8 - TX <- RX(надо)
-//constexpr uint16_t UART_RX_PIN = GPIO9;     // PD9 - RX <- TX
-//constexpr uint32_t UART_DEVICE = USART3;
-
-// UART
-constexpr uint32_t UART_PORT = GPIOA;
-constexpr uint16_t UART_TX_PIN = GPIO9;     // PD8 - TX <- RX(надо)
-constexpr uint16_t UART_RX_PIN = GPIO10;     // PD9 - RX <- TX
-constexpr uint32_t UART_DEVICE = USART1;
+constexpr uint32_t UART_PORT = GPIOA;                           // GPIOA - чёрная   GPIOD - зелёная  
+constexpr uint16_t UART_TX_PIN = GPIO9;     // TX <- RX(надо)   // GPIO9            GPIO8       
+constexpr uint16_t UART_RX_PIN = GPIO10;    // RX <- TX         // GPIO10           GPIO9 
+constexpr uint32_t UART_DEVICE = USART1;                        // USART1           USART3
 
 // Глобальные переменные
 volatile uint32_t pulse_start = 0;
@@ -61,13 +50,12 @@ void my_usart_print_int(uint32_t usart, int32_t value);
 void clock_setup(void){
     rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_84MHZ]);
 
-    // Включаем тактирование для GPIOA, GPIOB и USART1, USART2
+    // Включаем тактирование для GPIOA, GPIOD, TIM2 и USART
     rcc_periph_clock_enable(RCC_GPIOA);
     rcc_periph_clock_enable(RCC_GPIOD);
     rcc_periph_clock_enable(RCC_TIM2);
     rcc_periph_clock_enable(RCC_USART1);
     //rcc_periph_clock_enable(RCC_USART3);
-
 }
 
 // Основная функция
@@ -91,10 +79,8 @@ int main(void) {
 
 
 void uart_setup(void) {
-    
     // Настраиваем пины UART
-    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, 
-                   UART_TX_PIN | UART_RX_PIN);
+    gpio_mode_setup(UART_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, UART_TX_PIN | UART_RX_PIN);
     gpio_set_af(UART_PORT, GPIO_AF7, UART_TX_PIN | UART_RX_PIN);
     
     // Настраиваем UART
@@ -109,55 +95,7 @@ void uart_setup(void) {
     usart_enable(UART_DEVICE);
 }
 
-void uart_send_string(const char *str) {
-    while (*str) {
-        usart_send_blocking(USART1, *str);
-        str++;
-    }
-}
-
-void my_usart_print_int(uint32_t usart, int32_t value) {
-    int8_t i;
-    int8_t nr_digits = 0;
-    char buffer[25];
-
-    if (value < 0) {
-        usart_send_blocking(usart, '-');
-        value = value * -1;
-    }
-
-    if (value == 0) {
-        usart_send_blocking(usart, '0');
-        return;
-    }
-
-    while (value > 0) {
-        buffer[nr_digits++] = "0123456789"[value % 10];
-        value /= 10;
-    }
-
-    for (i = nr_digits-1; i >= 0; i--) {
-        usart_send_blocking(usart, buffer[i]);
-    }
-}
-
-
-void send_distance_cm(uint32_t distance_cm) {
-    uart_send_string("Расстояние: ");
-    my_usart_print_int(USART1, distance_cm);
-    uart_send_string(" мм\r\n");
-    
-    if (distance_cm >= 20 && distance_cm <= 4000) { // При правильных измерениях
-        gpio_set(LED_PORT, LED_PIN);
-        delay_ms(30);
-        gpio_clear(LED_PORT, LED_PIN);
-    }
-}
-
-void gpio_setup(void) {
-    rcc_periph_clock_enable(RCC_GPIOA);
-    rcc_periph_clock_enable(RCC_GPIOD); 
-    
+void gpio_setup(void) { 
     // TRIG как выход
     gpio_mode_setup(TRIG_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, TRIG_PIN);
     gpio_clear(TRIG_PORT, TRIG_PIN);
@@ -200,6 +138,7 @@ void timer_setup(void) {
     timer_enable_counter(TIM2);
 
 }
+
 // Обработчик прерывания TIM2
 void tim2_isr(void) {
     if (timer_get_flag(TIM2, TIM_SR_CC4IF)) {
@@ -227,6 +166,7 @@ void tim2_isr(void) {
 }
 
 uint32_t measure_distance(void) {
+    // Сброс 
     measurement_ready = false;
     pulse_start = 0;
     pulse_end = 0;
@@ -250,6 +190,52 @@ uint32_t measure_distance(void) {
 }
 
 
+// Для отправки в UART
+void uart_send_string(const char *str) {
+    while (*str) {
+        usart_send_blocking(USART1, *str);
+        str++;
+    }
+}
+
+void my_usart_print_int(uint32_t usart, int32_t value) {
+    int8_t i;
+    int8_t nr_digits = 0;
+    char buffer[25];
+
+    if (value < 0) {
+        usart_send_blocking(usart, '-');
+        value = value * -1;
+    }
+
+    if (value == 0) {
+        usart_send_blocking(usart, '0');
+        return;
+    }
+
+    while (value > 0) {
+        buffer[nr_digits++] = "0123456789"[value % 10];
+        value /= 10;
+    }
+
+    for (i = nr_digits-1; i >= 0; i--) {
+        usart_send_blocking(usart, buffer[i]);
+    }
+}
+
+void send_distance_cm(uint32_t distance_cm) {
+    uart_send_string("Расстояние: ");
+    my_usart_print_int(USART1, distance_cm);
+    uart_send_string(" мм\r\n");
+    
+    if (distance_cm >= 20 && distance_cm <= 4000) { // При правильных измерениях
+        gpio_set(LED_PORT, LED_PIN);
+        delay_ms(30);
+        gpio_clear(LED_PORT, LED_PIN);
+    }
+}
+
+// Задержки
 void delay_us(uint32_t us) {
     for (volatile uint32_t i = 0; i < us * 84; i++);
 }
@@ -260,4 +246,4 @@ void delay_ms(uint32_t ms) {
     }
 }
 
-
+//sudo chmod 666 /dev/ttyUSB0
