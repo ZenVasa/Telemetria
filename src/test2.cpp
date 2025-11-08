@@ -4,15 +4,16 @@
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/usart.h>
+#include <libopencm3/stm32/spi.h>
 #include <stdbool.h>
 
 // Константы для SPI
-constexpr uint32_t SPI_DEVICE SPI2
-constexpr uint32_t SPI_PORT GPIOB
-constexpr uint16_t SPI_SCK_PIN GPIO13
-constexpr uint16_t SPI_MISO_PIN GPIO14
-constexpr uint16_t SPI_MOSI_PIN GPIO15
-constexpr uint16_t SPI_NSS_PIN GPIO12
+constexpr uint32_t SPI_DEVICE = SPI2;
+constexpr uint32_t SPI_PORT = GPIOB;
+constexpr uint16_t SPI_SCK_PIN = GPIO13;
+constexpr uint16_t SPI_MISO_PIN = GPIO14;
+constexpr uint16_t SPI_MOSI_PIN = GPIO15;
+constexpr uint16_t SPI_NSS_PIN = GPIO12;
 
 // Таймер
 constexpr uint32_t MEASURE_TIMER = TIM2;
@@ -116,7 +117,7 @@ void spi2_send_distance(uint32_t distance) {
             buffer[length++] = '0' + (distance % 10);
             distance /= 10;
         }
-        
+
         // Отправляем цифры в правильном порядке (от старшей к младшей)
         for (int i = length - 1; i >= 0; i--) {
             spi2_slave_send(buffer[i]);
@@ -161,10 +162,10 @@ void gpio_setup(void) {
 
 
     // SPI2 на выводах PB13(SCK), PB14(MISO), PB15(MOSI), PB12(NSS)
-    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_SCK_PIN);   // SCK (вход)
-    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MOSI_PIN);  // MOSI (вход)
-    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MISO_PIN);  // MISO (выход)
-    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, SPI_NSS_PIN); // NSS (вход с подтяжкой к VCC)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_SCK_PIN);   // PB13 SCK (вход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MOSI_PIN);  // PB15 MOSI (вход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MISO_PIN);  // PB14 MISO (выход)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, SPI_NSS_PIN); // PB12 NSS (вход с подтяжкой к VCC)
     
     // Установка альтернативной функции SPI2 (AF5)
     gpio_set_af(SPI_PORT, GPIO_AF5, SPI_SCK_PIN | SPI_MISO_PIN | SPI_MOSI_PIN | SPI_NSS_PIN);
@@ -300,7 +301,7 @@ bool spi2_slave_selected(void)
 void send_distance_cm(uint32_t distance_cm) {
     uart_send_string("Расстояние: ");
     my_usart_print_int(USART1, distance_cm);
-    uart_send_string(" мм\r\n");
+    uart_send_string(" См\r\n");
     
     if (distance_cm >= 2 && distance_cm <= 400) { // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
@@ -352,4 +353,6 @@ void delay_ms(uint32_t ms) {
     }
 }
 
-//sudo chmod 666 /dev/ttyUSB0
+// Команды для починки
+// sudo chmod 666 /dev/ttyUSB0
+// openocd -f interface/stlink.cfg -f target/stm32f4x.cfg -c "init; reset; shutdown"
