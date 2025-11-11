@@ -25,14 +25,14 @@ constexpr uint32_t ECHO_PORT = GPIOA;
 constexpr uint16_t ECHO_PIN = GPIO3;        // PA3 - TIM2_CH4 - ECHO
 
 // LED
-constexpr uint32_t LED_PORT = GPIOA; // GPIOA - чёрная, GPIOD - зелёная
-constexpr uint16_t LED_PIN = GPIO1;  // GPIO1           GPIO14
+constexpr uint32_t LED_PORT = GPIOD;  // GPIOA - чёрная, GPIOD - зелёная
+constexpr uint16_t LED_PIN = GPIO14;  // GPIO1           GPIO14
 
 // UART
-constexpr uint32_t UART_PORT = GPIOA;                           // GPIOA - чёрная   GPIOD - зелёная  
-constexpr uint16_t UART_TX_PIN = GPIO9;     // TX <- RX(надо)   // GPIO9            GPIO8       
-constexpr uint16_t UART_RX_PIN = GPIO10;    // RX <- TX         // GPIO10           GPIO9 
-constexpr uint32_t UART_DEVICE = USART1;                        // USART1           USART3
+constexpr uint32_t UART_PORT = GPIOD;                           // GPIOA - чёрная   GPIOD - зелёная  
+constexpr uint16_t UART_TX_PIN = GPIO8;     // TX <- RX(надо)   // GPIO9            GPIO8       
+constexpr uint16_t UART_RX_PIN = GPIO9;     // RX <- TX         // GPIO10           GPIO9 
+constexpr uint32_t UART_DEVICE = USART3;                        // USART1           USART3
 
 // Глобальные переменные
 volatile uint32_t pulse_start = 0;
@@ -71,7 +71,7 @@ void clock_setup(void){
     rcc_periph_clock_enable(RCC_GPIOD);
     rcc_periph_clock_enable(RCC_TIM2);
     rcc_periph_clock_enable(RCC_SPI2);
-    rcc_periph_clock_enable(RCC_USART1); // или RCC_USART3
+    rcc_periph_clock_enable(RCC_USART3); // или RCC_USART3
 
 }
 
@@ -94,7 +94,7 @@ int main(void) {
             spi2_send_distance(distance); // Отправляем расстояние по SPI
         }
 
-        delay_ms(30);
+        delay_ms(10);
     }
     
     return 0;
@@ -111,7 +111,8 @@ void spi2_send_distance(uint32_t distance) {
     // Преобразуем число в строку
     if (distance == 0) {
         spi2_slave_send('0');
-    } else {
+    } 
+    else {
         // Извлекаем цифры и сохраняем в буфер в обратном порядке
         while (distance > 0) {
             buffer[length++] = '0' + (distance % 10);
@@ -120,12 +121,19 @@ void spi2_send_distance(uint32_t distance) {
 
         // Отправляем цифры в правильном порядке (от старшей к младшей)
         for (int i = length - 1; i >= 0; i--) {
+            
+            // Ждем, когда буфер передачи станет пустым
+            while (!(SPI_SR(SPI_DEVICE) & SPI_SR_TXE)) {
+            // Ожидание готовности
+    }
             spi2_slave_send(buffer[i]);
         }
     }
-    
     // Завершаем символом ';'
     spi2_slave_send(';');
+
+    spi2_slave_send('\0');
+
 }
 
 
@@ -165,7 +173,7 @@ void gpio_setup(void) {
     gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_SCK_PIN);   // PB13 SCK (вход)
     gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MOSI_PIN);  // PB15 MOSI (вход)
     gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SPI_MISO_PIN);  // PB14 MISO (выход)
-    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, SPI_NSS_PIN); // PB12 NSS (вход с подтяжкой к VCC)
+    gpio_mode_setup(SPI_PORT, GPIO_MODE_AF, GPIO_PUPD_PULLUP, SPI_NSS_PIN); // PB12 NSS (вход с подтяжкой)
     
     // Установка альтернативной функции SPI2 (AF5)
     gpio_set_af(SPI_PORT, GPIO_AF5, SPI_SCK_PIN | SPI_MISO_PIN | SPI_MOSI_PIN | SPI_NSS_PIN);
@@ -300,10 +308,10 @@ bool spi2_slave_selected(void)
 
 void send_distance_cm(uint32_t distance_cm) {
     uart_send_string("Расстояние: ");
-    my_usart_print_int(USART1, distance_cm);
+    my_usart_print_int(USART3, distance_cm);        // USART3
     uart_send_string(" См\r\n");
     
-    if (distance_cm >= 2 && distance_cm <= 400) { // При правильных измерениях
+    if (distance_cm >= 2 && distance_cm <= 400) {   // При правильных измерениях
         gpio_set(LED_PORT, LED_PIN);
         delay_ms(30);
         gpio_clear(LED_PORT, LED_PIN);
@@ -312,7 +320,7 @@ void send_distance_cm(uint32_t distance_cm) {
 
 void uart_send_string(const char *str) {
     while (*str) {
-        usart_send_blocking(USART1, *str);
+        usart_send_blocking(USART3, *str);
         str++;
     }
 }
